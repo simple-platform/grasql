@@ -19,9 +19,16 @@
 
   "cSpell.words": [
     "AFLAGS",
+    "defmodule",
+    "defp",
+    "defstruct",
     "devbox",
     "grasql",
+    "libgrasql",
+    "moduledoc",
+    "proptest",
     "rebar",
-    "rustup"
+    "rustup",
+    "serde"
   ]
 }

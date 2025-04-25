@@ -26,4 +26,5 @@ grasql-*.tar
 .nix-mix/
 .nix-hex/
 .elixir-ls/
+.playground/
 node_modules/
