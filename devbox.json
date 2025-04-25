@@ -1,0 +1,28 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.14.2/.schema/devbox.schema.json",
+  "packages": [
+    "erlang@27.2",
+    "elixir@1.18.1",
+    "rustup@1.27.1",
+    "bun@1.2.8",
+    "beam27Packages.elixir-ls@0.27.2"
+  ],
+  "shell": {
+    "init_hook": [
+      "mkdir -p .nix-mix",
+      "mkdir -p .nix-hex",
+      "export MIX_HOME=$PWD/.nix-mix",
+      "export HEX_HOME=$PWD/.nix-hex",
+      "export ERL_AFLAGS='-kernel shell_history enabled'",
+      "mix local.hex --force > /dev/null",
+      "mix local.rebar --force > /dev/null",
+      "projectDir=$(dirname $(readlink -f \"$0\"))",
+      "rustupHomeDir=\"$projectDir\"/.rustup",
+      "mkdir -p $rustupHomeDir",
+      "export RUSTUP_HOME=$rustupHomeDir",
+      "export LIBRARY_PATH=$LIBRARY_PATH:\"$projectDir/nix/profile/default/lib\"",
+      "rustup default stable",
+      "rustup component add rust-analyzer"
+    ]
+  }
+}
