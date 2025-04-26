@@ -139,8 +139,13 @@ defmodule GraSQL.Field do
       iex> GraSQL.Field.get_argument(field, "limit", 20)
       20
   """
+
   @spec get_argument(t(), String.t(), any()) :: any()
   def get_argument(%__MODULE__{arguments: arguments}, arg_name, default \\ nil) do
+    unless is_binary(arg_name) do
+      raise ArgumentError, "arg_name must be a string"
+    end
     Map.get(arguments, arg_name, default)
+
   end
 end
