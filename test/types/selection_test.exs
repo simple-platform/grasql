@@ -1,3 +1,4 @@
+
 defmodule GraSQL.SelectionTest do
   use ExUnit.Case
   doctest GraSQL.Selection
@@ -36,6 +37,6 @@ defmodule GraSQL.SelectionTest do
 
   test "find_field/2 returns :error if the field does not exist" do
     selection = Selection.new()
-    assert Selection.find_field(selection, "missing") == :error
+    assert Selection.find_field(selection, "missing") == {:error, :not_found}
   end
 end

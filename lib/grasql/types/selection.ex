@@ -1,3 +1,4 @@
+
 defmodule GraSQL.Selection do
   @moduledoc """
   Represents a GraphQL selection set.
@@ -94,12 +95,12 @@ defmodule GraSQL.Selection do
 
       iex> selection = %GraSQL.Selection{fields: [%GraSQL.Field{name: "id"}]}
       iex> GraSQL.Selection.find_field(selection, "email")
-      :error
+      {:error, :not_found}
   """
-  @spec find_field(t(), String.t()) :: {:ok, GraSQL.Field.t()} | :error
+  @spec find_field(t(), String.t()) :: {:ok, GraSQL.Field.t()} | {:error, :not_found}
   def find_field(%__MODULE__{fields: fields}, name) do
     case Enum.find(fields, fn field -> field.name == name end) do
-      nil -> :error
+      nil -> {:error, :not_found}
       field -> {:ok, field}
     end
   end
