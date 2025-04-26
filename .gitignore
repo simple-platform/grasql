@@ -28,3 +28,8 @@ grasql-*.tar
 .elixir-ls/
 .playground/
 node_modules/
+
+# Rust binary artifacts
+/target/
+
+*/**/*.so

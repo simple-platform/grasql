@@ -2,7 +2,5 @@ defmodule GraSQLTest do
   use ExUnit.Case
   doctest GraSQL
 
-  test "greets the world" do
-    assert GraSQL.hello() == :world
-  end
+  # Core type tests will be added here
 end

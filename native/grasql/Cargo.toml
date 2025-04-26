@@ -1,0 +1,11 @@
+[package]
+name = "grasql"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "grasql"
+crate-type = ["cdylib"]
+
+[dependencies]
+rustler = "0.36.1"

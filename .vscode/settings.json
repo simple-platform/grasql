@@ -17,18 +17,42 @@
     "editor.defaultFormatter": "JakeBecker.elixir-ls"
   },
 
+
+  "rust-analyzer.linkedProjects": [
+    "native/grasql/Cargo.toml"
+  ],
+
   "cSpell.words": [
     "AFLAGS",
+    "cdylib",
+    "dedup",
+    "defmacro",
     "defmodule",
     "defp",
     "defstruct",
     "devbox",
+    "doctest",
+    "erts",
+    "funcs",
+    "fxhash",
+    "Graphviz",
     "grasql",
+    "Interner",
     "libgrasql",
     "moduledoc",
+    "moduletag",
+    "peekable",
+    "phash",
     "proptest",
     "rebar",
+    "repr",
+    "roundtrips",
     "rustup",
-    "serde"
+    "serde",
+    "smallvec",
+    "Tpng",
+    "trunc",
+    "usize",
+    "writeln"
   ]
 }
