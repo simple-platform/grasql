@@ -117,8 +117,7 @@ defmodule GraSQL.Field do
       "id"
   """
   @spec effective_name(t()) :: String.t()
-  def effective_name(%__MODULE__{name: name, alias: nil}), do: name
-  def effective_name(%__MODULE__{alias: alias}) when not is_nil(alias), do: alias
+  def effective_name(%__MODULE__{name: name, alias: alias}), do: alias || name
 
   @doc """
   Gets the value of an argument from the field, with an optional default value.
