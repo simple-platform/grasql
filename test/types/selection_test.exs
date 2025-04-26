@@ -34,8 +34,8 @@ defmodule GraSQL.SelectionTest do
     assert {:ok, ^field2} = Selection.find_field(selection, "name")
   end
 
-  test "find_field/2 returns :error if the field does not exist" do
+  test "find_field/2 returns {:error, :not_found} if the field does not exist" do
     selection = Selection.new()
-    assert Selection.find_field(selection, "missing") == :error
+    assert Selection.find_field(selection, "missing") == {:error, :not_found}
   end
 end
