@@ -22,14 +22,14 @@ defmodule GraSQL.SqlResultTest do
   test "add_parameter/3 adds a parameter to the SQL result" do
     sql_result = %SqlResult{
       sql: "SELECT * FROM users WHERE id = $1",
-      parameters: [],
-      parameter_types: []
+      parameters: [42],
+      parameter_types: ["integer"]
     }
 
     updated = SqlResult.add_parameter(sql_result, 1, "integer")
 
-    assert updated.parameters == [1]
-    assert updated.parameter_types == ["integer"]
+    assert updated.parameters == [42, 1]
+    assert updated.parameter_types == ["integer", "integer"]
   end
 
   test "parameter_count/1 returns the number of parameters" do
