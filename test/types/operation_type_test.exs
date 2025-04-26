@@ -12,13 +12,15 @@ defmodule GraSQL.OperationTypeTest do
     assert OperationType.mutation() == :mutation
   end
 
-  test "@type t includes query and mutation" do
-    # Type checking is done at compile time, this is just to verify the type exists
-    query_val = OperationType.query()
-    mutation_val = OperationType.mutation()
+test "@type t includes query and mutation" do
+  # Type checking is done at compile time, this is just to verify the type exists
+  query_val = OperationType.query()
+  mutation_val = OperationType.mutation()
 
-    # Simple check to ensure the values are atoms
-    assert is_atom(query_val)
-    assert is_atom(mutation_val)
-  end
+  # Simple check to ensure the values are atoms
+  assert is_atom(query_val)
+  assert is_atom(mutation_val)
+  assert query_val == :query
+  assert mutation_val == :mutation
+end
 end
