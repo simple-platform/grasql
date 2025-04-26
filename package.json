@@ -2,7 +2,8 @@
   "name": "@simple-platform/grasql",
   "packageManager": "bun@1.2.8",
   "scripts": {
-    "deps": "bun install && mix deps.get"
+    "deps": "bun install && mix deps.get",
+    "test": "mix coveralls.html"
   },
   "devDependencies": {
     "@commitlint/cli": "19.8.0",

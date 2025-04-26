@@ -32,4 +32,5 @@ node_modules/
 # Rust binary artifacts
 /target/
 
-*/**/*.so
+**/*.so
+**/*.dylib

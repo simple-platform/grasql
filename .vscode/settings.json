@@ -32,6 +32,7 @@
     "defstruct",
     "devbox",
     "doctest",
+    "dylib",
     "erts",
     "funcs",
     "fxhash",

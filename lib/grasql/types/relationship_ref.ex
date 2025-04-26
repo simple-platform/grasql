@@ -289,12 +289,11 @@ defmodule GraSQL.RelationshipRef do
         target_table: target,
         source_column: sc,
         target_column: tc,
-        relationship_type: rt,
         join_table: jt
       }) do
     source_hash = GraSQL.TableRef.hash(source)
     target_hash = GraSQL.TableRef.hash(target)
     join_hash = if jt, do: GraSQL.TableRef.hash(jt), else: 0
-    :erlang.phash2({source_hash, target_hash, sc, tc, rt, join_hash})
+    :erlang.phash2({source_hash, target_hash, sc, tc, join_hash})
   end
 end
