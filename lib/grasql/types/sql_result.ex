@@ -129,10 +129,19 @@ defmodule GraSQL.SqlResult do
       iex> sql_result = %GraSQL.SqlResult{parameters: [1, "test"]}
       iex> GraSQL.SqlResult.get_parameter(sql_result, 1)
       "test"
+
+  ## Errors
+
+  Raises `ArgumentError` if the index is out of bounds.
   """
   @spec get_parameter(t(), non_neg_integer()) :: any()
-  def get_parameter(%__MODULE__{parameters: params}, index) do
+  def get_parameter(%__MODULE__{parameters: params}, index)
+      when index >= 0 and index < length(params) do
     Enum.at(params, index)
+  end
+
+  def get_parameter(_sql_result, index) do
+    raise ArgumentError, "Parameter index #{index} is out of bounds"
   end
 
   @doc """
@@ -148,9 +157,18 @@ defmodule GraSQL.SqlResult do
       iex> sql_result = %GraSQL.SqlResult{parameter_types: ["integer", "text"]}
       iex> GraSQL.SqlResult.get_parameter_type(sql_result, 1)
       "text"
+
+  ## Errors
+
+  Raises `ArgumentError` if the index is out of bounds.
   """
   @spec get_parameter_type(t(), non_neg_integer()) :: String.t()
-  def get_parameter_type(%__MODULE__{parameter_types: types}, index) do
+  def get_parameter_type(%__MODULE__{parameter_types: types}, index)
+      when index >= 0 and index < length(types) do
     Enum.at(types, index)
+  end
+
+  def get_parameter_type(_sql_result, index) do
+    raise ArgumentError, "Parameter type index #{index} is out of bounds"
   end
 end

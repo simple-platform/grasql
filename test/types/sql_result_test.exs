@@ -43,9 +43,33 @@ defmodule GraSQL.SqlResultTest do
     assert SqlResult.get_parameter(sql_result, 1) == "test"
   end
 
+  test "get_parameter/2 raises ArgumentError for out-of-bounds index" do
+    sql_result = %SqlResult{parameters: [1, "test"]}
+
+    assert_raise ArgumentError, "Parameter index 2 is out of bounds", fn ->
+      SqlResult.get_parameter(sql_result, 2)
+    end
+
+    assert_raise ArgumentError, "Parameter index -1 is out of bounds", fn ->
+      SqlResult.get_parameter(sql_result, -1)
+    end
+  end
+
   test "get_parameter_type/2 returns the parameter type at the specified index" do
     sql_result = %SqlResult{parameter_types: ["integer", "text"]}
     assert SqlResult.get_parameter_type(sql_result, 0) == "integer"
     assert SqlResult.get_parameter_type(sql_result, 1) == "text"
+  end
+
+  test "get_parameter_type/2 raises ArgumentError for out-of-bounds index" do
+    sql_result = %SqlResult{parameter_types: ["integer", "text"]}
+
+    assert_raise ArgumentError, "Parameter type index 2 is out of bounds", fn ->
+      SqlResult.get_parameter_type(sql_result, 2)
+    end
+
+    assert_raise ArgumentError, "Parameter type index -1 is out of bounds", fn ->
+      SqlResult.get_parameter_type(sql_result, -1)
+    end
   end
 end
