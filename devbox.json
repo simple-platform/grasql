@@ -1,12 +1,16 @@
 {
   "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.14.2/.schema/devbox.schema.json",
-  "packages": [
-    "erlang@27.2",
-    "elixir@1.18.1",
-    "rustup@1.27.1",
-    "bun@1.2.8",
-    "beam27Packages.elixir-ls@0.27.2"
-  ],
+  "packages": {
+    "erlang": "27.2",
+    "elixir": "1.18.1",
+    "beam27Packages.elixir-ls": "0.27.2",
+    "rustup": "1.27.1",
+    "bun": "1.2.8",
+    "nodejs": "23.11.0"
+  },
+  "env": {
+    "DEVBOX_COREPACK_ENABLED": "true"
+  },
   "shell": {
     "init_hook": [
       "mkdir -p .nix-mix",
