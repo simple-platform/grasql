@@ -22,8 +22,11 @@ defmodule GraSQL.ResultStructureTest do
   test "add_field/4 adds a field to the result structure" do
     structure = ResultStructure.new()
     updated = ResultStructure.add_field(structure, "u_id", ["user", "id"], false)
+    updated = ResultStructure.add_field(updated, "u_name", ["user", "name"], false)
 
-    assert [%{sql_column: "u_id", path: ["user", "id"], is_json: false}] = updated.fields
+    assert Enum.count(updated.fields) == 2
+    assert Enum.any?(updated.fields, &(&1.sql_column == "u_id" and &1.path == ["user", "id"]))
+    assert Enum.any?(updated.fields, &(&1.sql_column == "u_name" and &1.path == ["user", "name"]))
   end
 
   test "add_nested_object/3 adds a nested object mapping" do
