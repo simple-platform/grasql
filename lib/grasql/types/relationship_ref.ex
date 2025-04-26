@@ -246,19 +246,25 @@ defmodule GraSQL.RelationshipRef do
           source_table: s1,
           target_table: t1,
           source_column: sc1,
-          target_column: tc1
+          target_column: tc1,
+          relationship_type: rt1,
+          join_table: jt1
         },
         %__MODULE__{
           source_table: s2,
           target_table: t2,
           source_column: sc2,
-          target_column: tc2
+          target_column: tc2,
+          relationship_type: rt2,
+          join_table: jt2
         }
       ) do
     GraSQL.TableRef.same_table?(s1, s2) &&
       GraSQL.TableRef.same_table?(t1, t2) &&
       sc1 == sc2 &&
-      tc1 == tc2
+      tc1 == tc2 &&
+      rt1 == rt2 &&
+      (jt1 == jt2 || GraSQL.TableRef.same_table?(jt1, jt2))
   end
 
   @doc """
