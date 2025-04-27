@@ -41,7 +41,7 @@ defmodule GraSQL.QueryAnalysis do
       iex> GraSQL.QueryAnalysis.new(qst, schema_needs, variable_map, operation_type)
       %GraSQL.QueryAnalysis{
         qst: %GraSQL.QueryStructureTree{operation_type: :query, root_fields: [], variables: []},
-        schema_needs: %GraSQL.SchemaNeeds{tables: [], relationships: []},
+        schema_needs: %GraSQL.SchemaNeeds{tables: MapSet.new(), relationships: MapSet.new()},
         variable_map: %{"limit" => 10},
         operation_type: :query
       }
@@ -124,6 +124,6 @@ defmodule GraSQL.QueryAnalysis do
   """
   @spec table_count(t()) :: non_neg_integer()
   def table_count(%__MODULE__{schema_needs: schema_needs}) do
-    length(schema_needs.tables)
+    MapSet.size(schema_needs.tables)
   end
 end
