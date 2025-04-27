@@ -29,15 +29,13 @@ defmodule GraSQL.QueryAnalysis do
   - `qst`: The query structure tree
   - `schema_needs`: The schema needs for the query
   - `variable_map`: Map of variable names to values
-  - `operation_type`: The type of GraphQL operation (deprecated, use qst.operation_type instead)
 
   ## Examples
 
       iex> qst = %GraSQL.QueryStructureTree{operation_type: :query}
       iex> schema_needs = GraSQL.SchemaNeeds.new()
       iex> variable_map = %{"limit" => 10}
-      iex> operation_type = GraSQL.OperationType.query()
-      iex> GraSQL.QueryAnalysis.new(qst, schema_needs, variable_map, operation_type)
+      iex> GraSQL.QueryAnalysis.new(qst, schema_needs, variable_map)
       %GraSQL.QueryAnalysis{
         qst: %GraSQL.QueryStructureTree{operation_type: :query, root_fields: [], variables: []},
         schema_needs: %GraSQL.SchemaNeeds{tables: MapSet.new(), relationships: MapSet.new()},
@@ -47,11 +45,9 @@ defmodule GraSQL.QueryAnalysis do
   @spec new(
           GraSQL.QueryStructureTree.t(),
           GraSQL.SchemaNeeds.t(),
-          map(),
-          GraSQL.OperationType.t()
+          map()
         ) :: t()
-  def new(qst, schema_needs, variable_map, _operation_type) do
-    # Ignore the operation_type parameter since it's duplicated in qst
+  def new(qst, schema_needs, variable_map) do
     %__MODULE__{
       qst: qst,
       schema_needs: schema_needs,

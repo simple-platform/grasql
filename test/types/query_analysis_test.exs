@@ -12,9 +12,8 @@ defmodule GraSQL.QueryAnalysisTest do
     qst = %QueryStructureTree{operation_type: OperationType.query()}
     schema_needs = SchemaNeeds.new()
     variable_map = %{"limit" => 10}
-    operation_type = OperationType.query()
 
-    analysis = QueryAnalysis.new(qst, schema_needs, variable_map, operation_type)
+    analysis = QueryAnalysis.new(qst, schema_needs, variable_map)
 
     assert analysis.qst == qst
     assert analysis.schema_needs == schema_needs
