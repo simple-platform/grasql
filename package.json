@@ -3,7 +3,7 @@
   "packageManager": "bun@1.2.8",
   "scripts": {
     "deps": "bun install && mix deps.get",
-    "test": "mix coveralls.html"
+    "test": "cd native/grasql && cargo test && cd ../.. && mix coveralls.html"
   },
   "devDependencies": {
     "@commitlint/cli": "19.8.0",

@@ -51,6 +51,7 @@
     "rustup",
     "serde",
     "smallvec",
+    "thiserror",
     "Tpng",
     "trunc",
     "usize",
