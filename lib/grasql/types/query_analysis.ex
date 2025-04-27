@@ -16,11 +16,10 @@ defmodule GraSQL.QueryAnalysis do
   @type t :: %__MODULE__{
           qst: GraSQL.QueryStructureTree.t(),
           schema_needs: GraSQL.SchemaNeeds.t(),
-          variable_map: map(),
-          operation_type: GraSQL.OperationType.t()
+          variable_map: map()
         }
 
-  defstruct [:qst, :schema_needs, :variable_map, :operation_type]
+  defstruct [:qst, :schema_needs, :variable_map]
 
   @doc """
   Creates a new query analysis result.
@@ -30,7 +29,7 @@ defmodule GraSQL.QueryAnalysis do
   - `qst`: The query structure tree
   - `schema_needs`: The schema needs for the query
   - `variable_map`: Map of variable names to values
-  - `operation_type`: The type of GraphQL operation
+  - `operation_type`: The type of GraphQL operation (deprecated, use qst.operation_type instead)
 
   ## Examples
 
@@ -42,8 +41,7 @@ defmodule GraSQL.QueryAnalysis do
       %GraSQL.QueryAnalysis{
         qst: %GraSQL.QueryStructureTree{operation_type: :query, root_fields: [], variables: []},
         schema_needs: %GraSQL.SchemaNeeds{tables: MapSet.new(), relationships: MapSet.new()},
-        variable_map: %{"limit" => 10},
-        operation_type: :query
+        variable_map: %{"limit" => 10}
       }
   """
   @spec new(
@@ -52,12 +50,12 @@ defmodule GraSQL.QueryAnalysis do
           map(),
           GraSQL.OperationType.t()
         ) :: t()
-  def new(qst, schema_needs, variable_map, operation_type) do
+  def new(qst, schema_needs, variable_map, _operation_type) do
+    # Ignore the operation_type parameter since it's duplicated in qst
     %__MODULE__{
       qst: qst,
       schema_needs: schema_needs,
-      variable_map: variable_map,
-      operation_type: operation_type
+      variable_map: variable_map
     }
   end
 
@@ -94,16 +92,18 @@ defmodule GraSQL.QueryAnalysis do
 
   ## Examples
 
-      iex> analysis = %GraSQL.QueryAnalysis{operation_type: :mutation}
+      iex> qst = %GraSQL.QueryStructureTree{operation_type: :mutation}
+      iex> analysis = %GraSQL.QueryAnalysis{qst: qst}
       iex> GraSQL.QueryAnalysis.mutation?(analysis)
       true
 
-      iex> analysis = %GraSQL.QueryAnalysis{operation_type: :query}
+      iex> qst = %GraSQL.QueryStructureTree{operation_type: :query}
+      iex> analysis = %GraSQL.QueryAnalysis{qst: qst}
       iex> GraSQL.QueryAnalysis.mutation?(analysis)
       false
   """
   @spec mutation?(t()) :: boolean()
-  def mutation?(%__MODULE__{operation_type: operation_type}) do
+  def mutation?(%__MODULE__{qst: %{operation_type: operation_type}}) do
     operation_type == GraSQL.OperationType.mutation()
   end
 

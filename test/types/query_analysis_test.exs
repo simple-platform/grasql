@@ -19,7 +19,6 @@ defmodule GraSQL.QueryAnalysisTest do
     assert analysis.qst == qst
     assert analysis.schema_needs == schema_needs
     assert analysis.variable_map == variable_map
-    assert analysis.operation_type == operation_type
   end
 
   test "get_variable/2 returns the variable value if it exists" do
@@ -33,12 +32,14 @@ defmodule GraSQL.QueryAnalysisTest do
   end
 
   test "mutation?/1 returns true for mutation operations" do
-    analysis = %QueryAnalysis{operation_type: OperationType.mutation()}
+    qst = %QueryStructureTree{operation_type: OperationType.mutation()}
+    analysis = %QueryAnalysis{qst: qst}
     assert QueryAnalysis.mutation?(analysis) == true
   end
 
   test "mutation?/1 returns false for query operations" do
-    analysis = %QueryAnalysis{operation_type: OperationType.query()}
+    qst = %QueryStructureTree{operation_type: OperationType.query()}
+    analysis = %QueryAnalysis{qst: qst}
     assert QueryAnalysis.mutation?(analysis) == false
   end
 

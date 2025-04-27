@@ -1,4 +1,4 @@
-use rustler::{Decoder, Encoder, NifStruct, Term};
+use rustler::{NifStruct, NifUnitEnum};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -6,38 +6,10 @@ use std::collections::HashMap;
 ///
 /// Used to determine the kind of operation a GraphQL request represents.
 /// Currently supports the standard Query and Mutation operations.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, NifUnitEnum)]
 pub enum OperationType {
     Query,
     Mutation,
-}
-
-// Define atoms for operation types
-rustler::atoms! {
-    query,
-    mutation,
-}
-
-// Implement rustler encoding/decoding for OperationType
-impl<'a> Decoder<'a> for OperationType {
-    fn decode(term: Term<'a>) -> Result<Self, rustler::Error> {
-        if term.atom_to_string()? == "query" {
-            Ok(OperationType::Query)
-        } else if term.atom_to_string()? == "mutation" {
-            Ok(OperationType::Mutation)
-        } else {
-            Err(rustler::Error::BadArg)
-        }
-    }
-}
-
-impl Encoder for OperationType {
-    fn encode<'a>(&self, env: rustler::Env<'a>) -> Term<'a> {
-        match self {
-            OperationType::Query => query().encode(env),
-            OperationType::Mutation => mutation().encode(env),
-        }
-    }
 }
 
 /// Represents a position in the source GraphQL document for error reporting
@@ -90,7 +62,7 @@ pub struct TableRef {
 /// Types of relationships between tables
 ///
 /// Defines the cardinality between related tables.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RelType {
     BelongsTo,
     HasOne,
@@ -158,7 +130,6 @@ pub struct QueryAnalysis {
     pub qst: QueryStructureTree,
     pub schema_needs: SchemaNeeds,
     pub variable_map: HashMap<String, String>,
-    pub operation_type: OperationType,
 }
 
 /// SQL result field mapping
