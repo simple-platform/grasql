@@ -1,4 +1,4 @@
-use rustler::NifStruct;
+use rustler::{Decoder, Encoder, NifStruct, Term};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -10,6 +10,34 @@ use std::collections::HashMap;
 pub enum OperationType {
     Query,
     Mutation,
+}
+
+// Define atoms for operation types
+rustler::atoms! {
+    query,
+    mutation,
+}
+
+// Implement rustler encoding/decoding for OperationType
+impl<'a> Decoder<'a> for OperationType {
+    fn decode(term: Term<'a>) -> Result<Self, rustler::Error> {
+        if term.atom_to_string()? == "query" {
+            Ok(OperationType::Query)
+        } else if term.atom_to_string()? == "mutation" {
+            Ok(OperationType::Mutation)
+        } else {
+            Err(rustler::Error::BadArg)
+        }
+    }
+}
+
+impl Encoder for OperationType {
+    fn encode<'a>(&self, env: rustler::Env<'a>) -> Term<'a> {
+        match self {
+            OperationType::Query => query().encode(env),
+            OperationType::Mutation => mutation().encode(env),
+        }
+    }
 }
 
 /// Represents a position in the source GraphQL document for error reporting
@@ -115,7 +143,7 @@ pub struct Variable {
 #[derive(Debug, Clone, Serialize, Deserialize, NifStruct)]
 #[module = "GraSQL.QueryStructureTree"]
 pub struct QueryStructureTree {
-    pub operation_type: String,
+    pub operation_type: OperationType,
     pub root_fields: Vec<Field>,
     pub variables: Vec<HashMap<String, String>>,
 }
@@ -130,7 +158,7 @@ pub struct QueryAnalysis {
     pub qst: QueryStructureTree,
     pub schema_needs: SchemaNeeds,
     pub variable_map: HashMap<String, String>,
-    pub operation_type: String,
+    pub operation_type: OperationType,
 }
 
 /// SQL result field mapping
