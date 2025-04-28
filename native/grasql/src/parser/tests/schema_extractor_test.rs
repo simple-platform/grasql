@@ -1,7 +1,10 @@
 #[cfg(test)]
 mod schema_extractor_tests {
     use crate::parser::schema_extractor::SchemaExtractor;
-    use crate::types::{Field, OperationType, QueryStructureTree, Selection, SourcePosition};
+    use crate::types::{
+        Field, FragmentDefinition, FragmentSpread, OperationType, QueryStructureTree, Selection,
+        SourcePosition, TypeCondition,
+    };
     use std::collections::{HashMap, HashSet};
 
     // Helper to create a field
@@ -9,6 +12,38 @@ mod schema_extractor_tests {
         let selection = Selection {
             fields: nested_fields,
             fragment_spreads: Vec::new(),
+            inline_fragments: Vec::new(),
+        };
+
+        Field {
+            name: name.to_string(),
+            alias: alias.map(|s| s.to_string()),
+            arguments: HashMap::new(),
+            selection: Box::new(selection),
+            source_position: SourcePosition { line: 0, column: 0 },
+            directives: Vec::new(),
+        }
+    }
+
+    // Helper to create a field with fragment spreads
+    fn create_field_with_fragments(
+        name: &str,
+        alias: Option<&str>,
+        nested_fields: Vec<Field>,
+        fragment_names: Vec<&str>,
+    ) -> Field {
+        let mut fragment_spreads = Vec::new();
+
+        for fragment_name in fragment_names {
+            fragment_spreads.push(FragmentSpread {
+                name: fragment_name.to_string(),
+                directives: Vec::new(),
+            });
+        }
+
+        let selection = Selection {
+            fields: nested_fields,
+            fragment_spreads,
             inline_fragments: Vec::new(),
         };
 
@@ -327,5 +362,130 @@ mod schema_extractor_tests {
             schema_needs.entity_references[0].alias,
             Some("u".to_string())
         );
+    }
+
+    #[test]
+    fn test_extract_cyclic_fragments() {
+        // Initialize schema extractor
+        let extractor = SchemaExtractor::new();
+
+        // Create a set of cyclic fragments:
+        // Fragment1 -> Fragment2 -> Fragment1 (cycle)
+
+        // Create fragment 1 that references fragment 2
+        let fragment1_selection = Selection {
+            fields: vec![
+                // Add a nested field with sub-selections to make it an object field
+                create_field(
+                    "user_details",
+                    None,
+                    vec![
+                        create_field("id", None, vec![]),
+                        create_field("username", None, vec![]),
+                    ],
+                ),
+            ],
+            fragment_spreads: vec![FragmentSpread {
+                name: "Fragment2".to_string(),
+                directives: Vec::new(),
+            }],
+            inline_fragments: Vec::new(),
+        };
+
+        let fragment1 = FragmentDefinition {
+            name: "Fragment1".to_string(),
+            type_condition: TypeCondition {
+                type_name: "User".to_string(),
+            },
+            directives: Vec::new(),
+            selection: Box::new(fragment1_selection),
+        };
+
+        // Create fragment 2 that references fragment 1 (creating a cycle)
+        let fragment2_selection = Selection {
+            fields: vec![
+                // Add a nested field with sub-selections to make it an object field
+                create_field(
+                    "post_details",
+                    None,
+                    vec![
+                        create_field("title", None, vec![]),
+                        create_field("content", None, vec![]),
+                    ],
+                ),
+            ],
+            fragment_spreads: vec![FragmentSpread {
+                name: "Fragment1".to_string(),
+                directives: Vec::new(),
+            }],
+            inline_fragments: Vec::new(),
+        };
+
+        let fragment2 = FragmentDefinition {
+            name: "Fragment2".to_string(),
+            type_condition: TypeCondition {
+                type_name: "User".to_string(),
+            },
+            directives: Vec::new(),
+            selection: Box::new(fragment2_selection),
+        };
+
+        // Create a map of fragments
+        let mut fragment_definitions = HashMap::new();
+        fragment_definitions.insert("Fragment1".to_string(), fragment1);
+        fragment_definitions.insert("Fragment2".to_string(), fragment2);
+
+        // Create a root field that references a fragment
+        let user_field = create_field_with_fragments("user", None, vec![], vec!["Fragment1"]);
+
+        let qst = QueryStructureTree {
+            operation_type: OperationType::Query,
+            root_fields: vec![user_field],
+            variables: Vec::new(),
+            fragment_definitions,
+        };
+
+        // Extraction should complete without stack overflow
+        let schema_needs = extractor.extract_schema_needs(&qst).unwrap();
+
+        // Verify entity references (should include the user entity)
+        assert!(
+            schema_needs
+                .entity_references
+                .iter()
+                .any(|e| e.graphql_name == "user"),
+            "Missing user entity reference"
+        );
+
+        // Extract field names from entity references for easier assertions
+        let entity_names: HashSet<String> = schema_needs
+            .entity_references
+            .iter()
+            .map(|e| e.graphql_name.clone())
+            .collect();
+
+        // Assert that fields from both fragments were properly extracted
+        // despite the cyclic references
+        assert!(
+            entity_names.contains("user_details"),
+            "Missing 'user_details' field from Fragment1"
+        );
+        assert!(
+            entity_names.contains("post_details"),
+            "Missing 'post_details' field from Fragment2"
+        );
+
+        // Print extracted entities for debugging
+        #[cfg(debug_assertions)]
+        {
+            println!("Extracted entities in cyclic fragments test:");
+            for entity in &schema_needs.entity_references {
+                println!(" - {}", entity.graphql_name);
+            }
+        }
+
+        // The test passes if we reach this point without a stack overflow
+        // which proves our cycle detection works
+        println!("Successfully handled cyclic fragments");
     }
 }

@@ -7,7 +7,7 @@ use crate::types::{
     EntityReference, Field, FragmentDefinition, QueryStructureTree, RelationshipReference,
     SchemaNeeds,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::error::Result;
 
@@ -158,6 +158,7 @@ impl SchemaExtractor {
         // Process fragment spreads in the selection
         for fragment_spread in &field.selection.fragment_spreads {
             if let Some(fragment_def) = fragment_definitions.get(&fragment_spread.name) {
+                let mut visited = HashSet::new();
                 self.extract_fragment_needs(
                     fragment_def,
                     parent_name,
@@ -165,6 +166,7 @@ impl SchemaExtractor {
                     entity_references,
                     relationship_references,
                     fragment_definitions,
+                    &mut visited,
                 )?;
             }
         }
@@ -208,6 +210,7 @@ impl SchemaExtractor {
             // Process fragment spreads in the inline fragment
             for fragment_spread in &inline_fragment.selection.fragment_spreads {
                 if let Some(fragment_def) = fragment_definitions.get(&fragment_spread.name) {
+                    let mut visited = HashSet::new();
                     self.extract_fragment_needs(
                         fragment_def,
                         parent_name,
@@ -215,6 +218,7 @@ impl SchemaExtractor {
                         entity_references,
                         relationship_references,
                         fragment_definitions,
+                        &mut visited,
                     )?;
                 }
             }
@@ -233,6 +237,7 @@ impl SchemaExtractor {
     /// * `entity_references` - The set of entity references to add to
     /// * `relationship_references` - The set of relationship references to add to
     /// * `fragment_definitions` - Map of all fragment definitions for recursive processing
+    /// * `visited` - Set of fragment names that have already been processed to prevent cycles
     ///
     /// # Returns
     ///
@@ -245,7 +250,12 @@ impl SchemaExtractor {
         entity_references: &mut Vec<EntityReference>,
         relationship_references: &mut Vec<RelationshipReference>,
         fragment_definitions: &HashMap<String, FragmentDefinition>,
+        visited: &mut HashSet<String>,
     ) -> Result<()> {
+        if !visited.insert(fragment.name.clone()) {
+            return Ok(()); // already processed, break the cycle
+        }
+
         // Process fields in the fragment
         for field in &fragment.selection.fields {
             let is_object = self.is_object_field(field);
@@ -291,6 +301,7 @@ impl SchemaExtractor {
                     entity_references,
                     relationship_references,
                     fragment_definitions,
+                    visited,
                 )?;
             }
         }
