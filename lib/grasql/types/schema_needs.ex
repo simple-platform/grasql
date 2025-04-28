@@ -16,15 +16,11 @@ defmodule GraSQL.SchemaNeeds do
   @typedoc "Collection of entity and relationship references needed for a query"
   @type t :: %__MODULE__{
           entity_references: [GraSQL.EntityReference.t()],
-          relationship_references: [GraSQL.RelationshipReference.t()],
-          tables: [GraSQL.TableRef.t()],
-          relationships: [GraSQL.RelationshipRef.t()]
+          relationship_references: [GraSQL.RelationshipReference.t()]
         }
 
   defstruct entity_references: [],
-            relationship_references: [],
-            tables: [],
-            relationships: []
+            relationship_references: []
 
   @doc """
   Creates a new schema needs collection.
@@ -32,7 +28,7 @@ defmodule GraSQL.SchemaNeeds do
   ## Examples
 
       iex> GraSQL.SchemaNeeds.new()
-      %GraSQL.SchemaNeeds{entity_references: [], relationship_references: [], tables: [], relationships: []}
+      %GraSQL.SchemaNeeds{entity_references: [], relationship_references: []}
   """
   @spec new() :: t()
   def new do
@@ -64,30 +60,15 @@ defmodule GraSQL.SchemaNeeds do
     }
   end
 
-  @doc """
-  Creates a schema needs collection with all fields specified.
-
-  ## Parameters
-
-  - `entity_references`: List of entity references
-  - `relationship_references`: List of relationship references
-  - `tables`: List of concrete table references
-  - `relationships`: List of concrete relationship references
-  """
   @spec new(
           list(GraSQL.EntityReference.t()),
-          list(GraSQL.RelationshipReference.t()),
-          list(GraSQL.TableRef.t()),
-          list(GraSQL.RelationshipRef.t())
+          list(GraSQL.RelationshipReference.t())
         ) :: t()
-  def new(entity_references, relationship_references, tables, relationships)
-      when is_list(entity_references) and is_list(relationship_references) and
-             is_list(tables) and is_list(relationships) do
+  def new(entity_references, relationship_references)
+      when is_list(entity_references) and is_list(relationship_references) do
     %__MODULE__{
       entity_references: entity_references,
-      relationship_references: relationship_references,
-      tables: tables,
-      relationships: relationships
+      relationship_references: relationship_references
     }
   end
 
@@ -184,31 +165,9 @@ defmodule GraSQL.SchemaNeeds do
       (needs1.relationship_references ++ needs2.relationship_references)
       |> Enum.uniq_by(fn rel -> {rel.parent_name, rel.child_name} end)
 
-    # Combine tables, avoiding duplicates
-    combined_tables =
-      (needs1.tables ++ needs2.tables)
-      |> Enum.uniq_by(fn table -> {table.schema, table.table, table.alias} end)
-
-    # Combine relationships, avoiding duplicates
-    combined_rels =
-      (needs1.relationships ++ needs2.relationships)
-      |> Enum.uniq_by(fn rel ->
-        {
-          rel.source_table.schema,
-          rel.source_table.table,
-          rel.source_table.alias,
-          rel.target_table.schema,
-          rel.target_table.table,
-          rel.target_table.alias,
-          rel.relationship_type
-        }
-      end)
-
     %__MODULE__{
       entity_references: combined_entities,
-      relationship_references: combined_relationships,
-      tables: combined_tables,
-      relationships: combined_rels
+      relationship_references: combined_relationships
     }
   end
 end

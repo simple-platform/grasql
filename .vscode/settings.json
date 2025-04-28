@@ -49,6 +49,7 @@
     "phash",
     "proptest",
     "rebar",
+    "rels",
     "repr",
     "roundtrips",
     "rustup",

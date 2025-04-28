@@ -42,6 +42,7 @@ impl SchemaExtractor {
     pub fn extract_schema_needs(&self, qst: &QueryStructureTree) -> Result<SchemaNeeds> {
         let mut entity_references = Vec::new();
         let mut relationship_references = Vec::new();
+        let mut visited_global = HashSet::new();
 
         // Process root fields
         for field in &qst.root_fields {
@@ -60,6 +61,7 @@ impl SchemaExtractor {
                 &mut entity_references,
                 &mut relationship_references,
                 &qst.fragment_definitions,
+                &mut visited_global,
             )?;
         }
 
@@ -96,6 +98,7 @@ impl SchemaExtractor {
     /// * `entity_references` - The set of entity references to add to
     /// * `relationship_references` - The set of relationship references to add to
     /// * `fragment_definitions` - Map of all fragment definitions
+    /// * `visited_global` - Global set of visited fragments to prevent cycles and duplications
     ///
     /// # Returns
     ///
@@ -108,6 +111,7 @@ impl SchemaExtractor {
         entity_references: &mut Vec<EntityReference>,
         relationship_references: &mut Vec<RelationshipReference>,
         fragment_definitions: &HashMap<String, FragmentDefinition>,
+        visited_global: &mut HashSet<String>,
     ) -> Result<()> {
         // Process nested fields
         for nested_field in &field.selection.fields {
@@ -149,13 +153,13 @@ impl SchemaExtractor {
                 entity_references,
                 relationship_references,
                 fragment_definitions,
+                visited_global,
             )?;
         }
 
         // Process fragment spreads in the selection
         for fragment_spread in &field.selection.fragment_spreads {
             if let Some(fragment_def) = fragment_definitions.get(&fragment_spread.name) {
-                let mut visited = HashSet::new();
                 self.extract_fragment_needs(
                     fragment_def,
                     parent_name,
@@ -163,7 +167,7 @@ impl SchemaExtractor {
                     entity_references,
                     relationship_references,
                     fragment_definitions,
-                    &mut visited,
+                    visited_global,
                 )?;
             }
         }
@@ -199,13 +203,13 @@ impl SchemaExtractor {
                     entity_references,
                     relationship_references,
                     fragment_definitions,
+                    visited_global,
                 )?;
             }
 
             // Process fragment spreads in the inline fragment
             for fragment_spread in &inline_fragment.selection.fragment_spreads {
                 if let Some(fragment_def) = fragment_definitions.get(&fragment_spread.name) {
-                    let mut visited = HashSet::new();
                     self.extract_fragment_needs(
                         fragment_def,
                         parent_name,
@@ -213,7 +217,7 @@ impl SchemaExtractor {
                         entity_references,
                         relationship_references,
                         fragment_definitions,
-                        &mut visited,
+                        visited_global,
                     )?;
                 }
             }
@@ -232,7 +236,7 @@ impl SchemaExtractor {
     /// * `entity_references` - The set of entity references to add to
     /// * `relationship_references` - The set of relationship references to add to
     /// * `fragment_definitions` - Map of all fragment definitions for recursive processing
-    /// * `visited` - Set of fragment names that have already been processed to prevent cycles
+    /// * `visited_global` - Global set of visited fragments to prevent cycles and duplications
     ///
     /// # Returns
     ///
@@ -245,9 +249,9 @@ impl SchemaExtractor {
         entity_references: &mut Vec<EntityReference>,
         relationship_references: &mut Vec<RelationshipReference>,
         fragment_definitions: &HashMap<String, FragmentDefinition>,
-        visited: &mut HashSet<String>,
+        visited_global: &mut HashSet<String>,
     ) -> Result<()> {
-        if !visited.insert(fragment.name.clone()) {
+        if !visited_global.insert(fragment.name.clone()) {
             return Ok(()); // already processed, break the cycle
         }
 
@@ -281,6 +285,7 @@ impl SchemaExtractor {
                 entity_references,
                 relationship_references,
                 fragment_definitions,
+                visited_global,
             )?;
         }
 
@@ -294,7 +299,7 @@ impl SchemaExtractor {
                     entity_references,
                     relationship_references,
                     fragment_definitions,
-                    visited,
+                    visited_global,
                 )?;
             }
         }
@@ -330,6 +335,7 @@ impl SchemaExtractor {
                     entity_references,
                     relationship_references,
                     fragment_definitions,
+                    visited_global,
                 )?;
             }
         }
