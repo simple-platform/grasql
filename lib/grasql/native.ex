@@ -30,12 +30,15 @@ defmodule GraSQL.Native do
   @doc """
   Phase 2: Generate SQL from analysis.
 
-  This function takes a query analysis, schema information, and options,
+  This function takes a query analysis with resolved schema information
   and generates optimized SQL for the database.
+
+  This is a low-level function that's typically not called directly.
+  For most use cases, use `GraSQL.generate_sql/4` instead.
 
   ## Parameters
 
-  - `query_analysis`: Analysis result from Phase 1
+  - `qst`: Resolved analysis with concrete tables and relationships
   - `schema_info`: Database schema information
   - `options`: Optional settings for SQL generation
 
@@ -44,7 +47,8 @@ defmodule GraSQL.Native do
   - `{:ok, sql_result}`: Successfully generated SQL
   - `{:error, reason}`: Error encountered during SQL generation
   """
-  def generate_sql(_query_analysis, _schema_info, _options \\ %{}) do
+  def generate_sql(_qst, _schema_info, _options) do
+    # Call the NIF
     :erlang.nif_error(:nif_not_loaded)
   end
 end

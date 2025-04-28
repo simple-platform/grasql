@@ -38,7 +38,7 @@ defmodule GraSQL.QueryAnalysis do
       iex> GraSQL.QueryAnalysis.new(qst, schema_needs, variable_map)
       %GraSQL.QueryAnalysis{
         qst: %GraSQL.QueryStructureTree{operation_type: :query, root_fields: [], variables: []},
-        schema_needs: %GraSQL.SchemaNeeds{tables: MapSet.new(), relationships: MapSet.new()},
+        schema_needs: %GraSQL.SchemaNeeds{entity_references: [], relationship_references: []},
         variable_map: %{"limit" => 10}
       }
   """
@@ -104,7 +104,7 @@ defmodule GraSQL.QueryAnalysis do
   end
 
   @doc """
-  Gets the count of tables needed for this query.
+  Gets the count of entities needed for this query.
 
   ## Parameters
 
@@ -112,14 +112,14 @@ defmodule GraSQL.QueryAnalysis do
 
   ## Examples
 
-      iex> tables = [GraSQL.TableRef.new("public", "users", nil)]
-      iex> schema_needs = GraSQL.SchemaNeeds.new(tables, [])
+      iex> entity_references = [%GraSQL.EntityReference{graphql_name: "users", alias: nil}]
+      iex> schema_needs = GraSQL.SchemaNeeds.new(entity_references, [])
       iex> analysis = %GraSQL.QueryAnalysis{schema_needs: schema_needs}
-      iex> GraSQL.QueryAnalysis.table_count(analysis)
+      iex> GraSQL.QueryAnalysis.entity_count(analysis)
       1
   """
-  @spec table_count(t()) :: non_neg_integer()
-  def table_count(%__MODULE__{schema_needs: schema_needs}) do
-    MapSet.size(schema_needs.tables)
+  @spec entity_count(t()) :: non_neg_integer()
+  def entity_count(%__MODULE__{schema_needs: schema_needs}) do
+    length(schema_needs.entity_references)
   end
 end
