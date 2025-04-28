@@ -60,18 +60,6 @@ defmodule GraSQL.SchemaNeeds do
     }
   end
 
-  @spec new(
-          list(GraSQL.EntityReference.t()),
-          list(GraSQL.RelationshipReference.t())
-        ) :: t()
-  def new(entity_references, relationship_references)
-      when is_list(entity_references) and is_list(relationship_references) do
-    %__MODULE__{
-      entity_references: entity_references,
-      relationship_references: relationship_references
-    }
-  end
-
   @doc """
   Adds an entity reference to the schema needs.
 
