@@ -14,7 +14,7 @@ use crate::types;
 /// Helper function to safely add a key-value pair to a map
 ///
 /// Creates a new map with the key-value pair added to the original map.
-/// This function handles the unwrap() internally to make the code more readable.
+/// This function adds contextual error information to make debugging easier in case of failure.
 ///
 /// # Arguments
 ///
@@ -26,7 +26,8 @@ use crate::types;
 ///
 /// A new map with the key-value pair added
 pub fn map_put<'a>(map: Term<'a>, key: Term<'a>, value: Term<'a>) -> Term<'a> {
-    map.map_put(key, value).unwrap()
+    map.map_put(key, value)
+        .expect("Failed to add key-value pair to map")
 }
 
 /// Helper function to create a list from a Vec of Terms
@@ -177,6 +178,26 @@ pub fn encode_selection<'a>(env: Env<'a>, selection: &types::Selection) -> Term<
     selection_map
 }
 
+/// Helper function to encode a HashMap of string keys and values to an Elixir map
+///
+/// # Arguments
+///
+/// * `env` - The NIF environment
+/// * `string_map` - HashMap with string keys and values to encode
+///
+/// # Returns
+///
+/// An Elixir map representation of the string map
+pub fn encode_string_map<'a>(env: Env<'a>, string_map: &HashMap<String, String>) -> Term<'a> {
+    let mut result_map = rustler::types::map::map_new(env);
+
+    for (key, value) in string_map {
+        result_map = map_put(result_map, key.encode(env), value.encode(env));
+    }
+
+    result_map
+}
+
 /// Encodes a HashMap of arguments into an Elixir term
 ///
 /// # Arguments
@@ -188,13 +209,7 @@ pub fn encode_selection<'a>(env: Env<'a>, selection: &types::Selection) -> Term<
 ///
 /// An Elixir map representation of the arguments
 pub fn encode_arguments<'a>(env: Env<'a>, arguments: &HashMap<String, String>) -> Term<'a> {
-    let mut args_map = rustler::types::map::map_new(env);
-
-    for (key, value) in arguments {
-        args_map = map_put(args_map, key.encode(env), value.encode(env));
-    }
-
-    args_map
+    encode_string_map(env, arguments)
 }
 
 /// Encodes a vector of variable HashMaps into an Elixir term
@@ -211,12 +226,7 @@ pub fn encode_variables<'a>(env: Env<'a>, variables: &[HashMap<String, String>])
     let mut var_terms = Vec::with_capacity(variables.len());
 
     for var in variables {
-        let mut var_map = rustler::types::map::map_new(env);
-
-        for (key, value) in var {
-            var_map = map_put(var_map, key.encode(env), value.encode(env));
-        }
-
+        let var_map = encode_string_map(env, var);
         var_terms.push(var_map);
     }
 
@@ -365,11 +375,5 @@ pub fn encode_relationship_references<'a>(
 ///
 /// An Elixir map representation of the variable map
 pub fn encode_variable_map<'a>(env: Env<'a>, variable_map: &HashMap<String, String>) -> Term<'a> {
-    let mut var_map = rustler::types::map::map_new(env);
-
-    for (key, value) in variable_map {
-        var_map = map_put(var_map, key.encode(env), value.encode(env));
-    }
-
-    var_map
+    encode_string_map(env, variable_map)
 }
