@@ -52,45 +52,71 @@ defmodule GraSQL do
   ```
   """
   def generate_sql(query, variables, resolver, ctx \\ %{}) do
-    # Convert variables to JSON string if passed as a map
-    variables_json =
-      case variables do
-        %{} -> Jason.encode!(variables)
-        binary when is_binary(binary) -> binary
-      end
+    variables_json = prepare_variables(variables)
+    validate_resolver(resolver)
 
-    # Validate resolver implements required methods
-    required_methods = [:resolve_tables, :resolve_relationships, :set_permissions, :set_overrides]
+    # Phase 1: Parse and analyze the GraphQL query
+    with {:ok, initial_qst} <- Native.parse_and_analyze_query(query, variables_json) do
+      is_mutation = mutation?(initial_qst)
+      validate_mutation_resolver(resolver, is_mutation)
+
+      # Apply resolver methods and generate SQL
+      enriched_qst = enrich_query(initial_qst, resolver, ctx, is_mutation)
+      Native.generate_sql(enriched_qst, %{}, %{})
+    end
+  end
+
+  # Convert variables to JSON string
+  defp prepare_variables(variables) do
+    case variables do
+      %{} = map ->
+        Jason.encode!(map)
+
+      binary when is_binary(binary) ->
+        binary
+
+      nil ->
+        "{}"
+
+      other ->
+        raise ArgumentError,
+              "variables must be a map, JSON string, or nil, got: #{inspect(other)}"
+    end
+  end
+
+  # Validate that resolver implements required methods
+  defp validate_resolver(resolver) do
+    required_methods = [:resolve_tables, :resolve_relationships, :set_permissions]
 
     for method <- required_methods do
       unless Code.ensure_loaded?(resolver) and function_exported?(resolver, method, 2) do
         raise ArgumentError, "resolver must implement #{method}/2"
       end
     end
+  end
 
-    # Phase 1: Parse and analyze the GraphQL query
-    with {:ok, initial_qst} <- Native.parse_and_analyze_query(query, variables_json) do
-      # Determine if this is a mutation
-      is_mutation = mutation?(initial_qst)
-
-      # Apply resolver methods in sequence
-      enriched_qst =
-        initial_qst
-        |> resolver.resolve_tables(ctx)
-        |> resolver.resolve_relationships(ctx)
-        |> resolver.set_permissions(ctx)
-        |> then(fn qst ->
-          # Only apply set_overrides if it's a mutation
-          if is_mutation do
-            resolver.set_overrides(qst, ctx)
-          else
-            qst
-          end
-        end)
-
-      # Phase 2: Generate SQL from the enriched analysis
-      Native.generate_sql(enriched_qst, %{}, %{})
+  # Validate that resolver implements set_overrides/2 for mutations
+  defp validate_mutation_resolver(resolver, true) do
+    unless Code.ensure_loaded?(resolver) and function_exported?(resolver, :set_overrides, 2) do
+      raise ArgumentError, "resolver must implement set_overrides/2 for mutations"
     end
+  end
+
+  defp validate_mutation_resolver(_resolver, false), do: :ok
+
+  # Apply resolver methods to enrich the query
+  defp enrich_query(qst, resolver, ctx, is_mutation) do
+    qst
+    |> resolver.resolve_tables(ctx)
+    |> resolver.resolve_relationships(ctx)
+    |> resolver.set_permissions(ctx)
+    |> then(fn enriched_qst ->
+      if is_mutation do
+        resolver.set_overrides(enriched_qst, ctx)
+      else
+        enriched_qst
+      end
+    end)
   end
 
   # Helper function to determine if the analysis represents a mutation

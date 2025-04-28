@@ -111,11 +111,8 @@ impl SchemaExtractor {
     ) -> Result<()> {
         // Process nested fields
         for nested_field in &field.selection.fields {
-            // Each nested field is either a scalar or an entity reference
-            let is_object = self.is_object_field(nested_field);
-
             // Skip if not an object (simple scalar field)
-            if !is_object {
+            if !self.is_object_field(nested_field) {
                 continue;
             }
 
@@ -174,9 +171,7 @@ impl SchemaExtractor {
         // Process inline fragments in the selection
         for inline_fragment in &field.selection.inline_fragments {
             for nested_field in &inline_fragment.selection.fields {
-                let is_object = self.is_object_field(nested_field);
-
-                if !is_object {
+                if !self.is_object_field(nested_field) {
                     continue;
                 }
 
@@ -258,9 +253,7 @@ impl SchemaExtractor {
 
         // Process fields in the fragment
         for field in &fragment.selection.fields {
-            let is_object = self.is_object_field(field);
-
-            if !is_object {
+            if !self.is_object_field(field) {
                 continue;
             }
 
@@ -309,9 +302,7 @@ impl SchemaExtractor {
         // Process inline fragments in this fragment
         for inline_fragment in &fragment.selection.inline_fragments {
             for field in &inline_fragment.selection.fields {
-                let is_object = self.is_object_field(field);
-
-                if !is_object {
+                if !self.is_object_field(field) {
                     continue;
                 }
 
