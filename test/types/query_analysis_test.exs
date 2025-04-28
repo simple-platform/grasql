@@ -2,11 +2,11 @@ defmodule GraSQL.QueryAnalysisTest do
   use ExUnit.Case
   doctest GraSQL.QueryAnalysis
 
+  alias GraSQL.EntityReference
   alias GraSQL.OperationType
   alias GraSQL.QueryAnalysis
   alias GraSQL.QueryStructureTree
   alias GraSQL.SchemaNeeds
-  alias GraSQL.TableRef
 
   test "new/4 creates a new query analysis" do
     qst = %QueryStructureTree{operation_type: OperationType.query()}
@@ -42,15 +42,15 @@ defmodule GraSQL.QueryAnalysisTest do
     assert QueryAnalysis.mutation?(analysis) == false
   end
 
-  test "table_count/1 returns the number of tables in schema_needs" do
-    tables = [
-      TableRef.new("public", "users", nil),
-      TableRef.new("public", "posts", nil)
+  test "entity_count/1 returns the number of entities in schema_needs" do
+    entity_references = [
+      %EntityReference{graphql_name: "users", alias: nil},
+      %EntityReference{graphql_name: "posts", alias: nil}
     ]
 
-    schema_needs = SchemaNeeds.new(tables, [])
+    schema_needs = SchemaNeeds.new(entity_references, [])
     analysis = %QueryAnalysis{schema_needs: schema_needs}
 
-    assert QueryAnalysis.table_count(analysis) == 2
+    assert QueryAnalysis.entity_count(analysis) == 2
   end
 end

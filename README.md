@@ -8,7 +8,7 @@ A high-performance GraphQL to SQL compiler optimized for PostgreSQL, used by the
 
 ## Overview
 
-GraSQL is designed to transform GraphQL queries into highly optimized SQL with extreme performance (100K+ queries/second). The library uses a two-phase compilation approach that efficiently handles schema resolution, permissions, and query optimization.
+GraSQL is designed to transform GraphQL queries into highly optimized SQL with extreme performance (100K+ queries/second). The library uses a resolver approach that efficiently handles schema resolution, permissions, and query optimization.
 
 ## Architecture
 
@@ -17,7 +17,7 @@ For detailed architecture information, see the [Architecture Document](docs/arch
 ## Features
 
 - Ultra-fast GraphQL to SQL compilation using Rust (via Rustler)
-- Two-phase compilation for optimal performance and flexibility
+- Structured resolver approach for schema mapping and permissions
 - Efficient schema resolution that minimizes memory usage
 - Cross-schema query support for complex database structures
 - Permission filtering and mutation value overrides
@@ -45,37 +45,45 @@ mix deps.get
 
 ## Usage
 
-GraSQL uses a two-phase approach for maximum efficiency:
+GraSQL uses a resolver-based approach for maximum efficiency and clarity:
 
 ```elixir
 defmodule MyApp.GraphQL do
   alias GraSQL
 
-  def execute_query(query, variables, user_id) do
-    # Phase 1: Analyze query to determine schema needs
-    case GraSQL.analyze_query(query, variables) do
-      {:ok, analysis} ->
-        # Resolve schema based on query needs
-        schema_info = MyApp.Database.get_schema_info(analysis.schema_needs)
+  # First, implement a resolver that maps GraphQL types to your database
+  defmodule Resolver do
+    # Map GraphQL types to database tables
+    def resolve_tables(qst) do
+      # Implementation that adds table information to the QST
+      # ...
+    end
 
-        # Set up options with permissions
-        options = %GraSQL.SqlGenOptions{
-          permissions: [
-            GraSQL.Filter.equal(GraSQL.ColumnRef.new("users.id"), user_id)
-          ],
-          overrides: [],
-          include_metadata: false
-        }
+    # Define relationships between tables
+    def resolve_relationships(qst) do
+      # Implementation that adds relationship information to the QST
+      # ...
+    end
 
-        # Phase 2: Generate SQL with schema info and permissions
-        case GraSQL.generate_sql(analysis, schema_info, options) do
-          {:ok, sql_result} ->
-            # Execute the SQL with your database client
-            MyApp.Database.execute(sql_result.sql, sql_result.parameters)
+    # Apply permission filters
+    def set_permissions(qst) do
+      # Implementation that adds permission filters to the QST
+      # ...
+    end
 
-          {:error, error} ->
-            {:error, handle_error(error)}
-        end
+    # Set overrides for mutations (only called for mutation operations)
+    def set_overrides(qst) do
+      # Implementation that adds value overrides to the QST
+      # ...
+    end
+  end
+
+  def execute_query(query, variables, _user_id) do
+    # Generate SQL using the resolver
+    case GraSQL.generate_sql(query, variables, Resolver) do
+      {:ok, sql_result} ->
+        # Execute the SQL with your database client
+        MyApp.Database.execute(sql_result.sql, sql_result.parameters)
 
       {:error, error} ->
         {:error, handle_error(error)}

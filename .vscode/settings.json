@@ -27,6 +27,7 @@
     "cdylib",
     "dedup",
     "defmacro",
+    "defmock",
     "defmodule",
     "defp",
     "defstruct",
@@ -40,12 +41,15 @@
     "grasql",
     "Interner",
     "libgrasql",
+    "mapset",
+    "meck",
     "moduledoc",
     "moduletag",
     "peekable",
     "phash",
     "proptest",
     "rebar",
+    "rels",
     "repr",
     "roundtrips",
     "rustup",
@@ -55,6 +59,7 @@
     "Tpng",
     "trunc",
     "usize",
+    "Vecs",
     "writeln"
   ]
 }

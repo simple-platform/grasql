@@ -2,96 +2,111 @@ defmodule GraSQL.SchemaNeedsTest do
   use ExUnit.Case
   doctest GraSQL.SchemaNeeds
 
-  alias GraSQL.RelationshipRef
+  alias GraSQL.EntityReference
+  alias GraSQL.RelationshipReference
   alias GraSQL.SchemaNeeds
-  alias GraSQL.TableRef
 
   test "new/0 creates an empty schema needs" do
     needs = SchemaNeeds.new()
-    assert MapSet.size(needs.tables) == 0
-    assert MapSet.size(needs.relationships) == 0
+    assert needs.entity_references == []
+    assert needs.relationship_references == []
   end
 
-  test "new/2 creates schema needs with tables and relationships" do
-    tables = [TableRef.new("public", "users", nil)]
-    relationships = []
-    needs = SchemaNeeds.new(tables, relationships)
+  test "new/2 creates schema needs with entity references and relationship references" do
+    entity_references = [%EntityReference{graphql_name: "users", alias: nil}]
+    relationship_references = []
+    needs = SchemaNeeds.new(entity_references, relationship_references)
 
-    assert MapSet.size(needs.tables) == 1
-    assert MapSet.to_list(needs.tables) == tables
-    assert MapSet.size(needs.relationships) == 0
+    assert needs.entity_references == entity_references
+    assert needs.relationship_references == []
   end
 
-  test "add_table/2 adds a table to schema needs" do
+  test "add_entity_reference/2 adds an entity reference to schema needs" do
     needs = SchemaNeeds.new()
-    table = TableRef.new("public", "users", nil)
-    updated = SchemaNeeds.add_table(needs, table)
+    entity_ref = %EntityReference{graphql_name: "users", alias: nil}
+    updated = SchemaNeeds.add_entity(needs, entity_ref)
 
-    assert MapSet.member?(updated.tables, table)
-    assert MapSet.size(updated.tables) == 1
+    assert Enum.member?(updated.entity_references, entity_ref)
+    assert length(updated.entity_references) == 1
   end
 
-  test "add_table/2 doesn't duplicate tables" do
-    table = TableRef.new("public", "users", nil)
-    needs = SchemaNeeds.new([table], [])
-    updated = SchemaNeeds.add_table(needs, table)
+  test "add_entity_reference/2 doesn't duplicate entity references" do
+    entity_ref = %EntityReference{graphql_name: "users", alias: nil}
+    needs = SchemaNeeds.new([entity_ref], [])
+    updated = SchemaNeeds.add_entity(needs, entity_ref)
 
-    assert MapSet.size(updated.tables) == 1
-    assert MapSet.to_list(updated.tables) == [table]
+    assert length(updated.entity_references) == 1
+    assert updated.entity_references == [entity_ref]
   end
 
-  test "add_table/2 doesn't duplicate tables with different aliases" do
-    table1 = TableRef.new("public", "users", nil)
-    table2 = TableRef.new("public", "users", "u")
-    needs = SchemaNeeds.new([table1], [])
-    updated = SchemaNeeds.add_table(needs, table2)
+  test "add_entity_reference/2 doesn't duplicate entity references with different aliases" do
+    entity_ref1 = %EntityReference{graphql_name: "users", alias: nil}
+    entity_ref2 = %EntityReference{graphql_name: "users", alias: "u"}
+    needs = SchemaNeeds.new([entity_ref1], [])
+    updated = SchemaNeeds.add_entity(needs, entity_ref2)
 
-    # Tables are considered the same if they have the same schema and name,
+    # Entity references are considered the same if they have the same graphql_name,
     # regardless of alias
-    assert MapSet.size(updated.tables) == 1
-    # MapSet will have preserved table1 since it was added first
-    assert MapSet.member?(updated.tables, table1)
-    # table2 should not be in the set as it's considered a duplicate
-    refute MapSet.member?(updated.tables, table2)
+    assert length(updated.entity_references) == 1
+    # Will have preserved entity_ref1 since it was added first
+    assert Enum.member?(updated.entity_references, entity_ref1)
+    # entity_ref2 should not be in the list as it's considered a duplicate
+    refute Enum.member?(updated.entity_references, entity_ref2)
   end
 
-  test "add_relationship/2 adds a relationship to schema needs" do
+  test "add_relationship_reference/2 adds a relationship reference to schema needs" do
     needs = SchemaNeeds.new()
-    source = TableRef.new("public", "users", nil)
-    target = TableRef.new("public", "posts", nil)
-    rel = RelationshipRef.has_many(source, target, "id", "user_id")
-    updated = SchemaNeeds.add_relationship(needs, rel)
 
-    assert MapSet.member?(updated.relationships, rel)
-    assert MapSet.size(updated.relationships) == 1
+    rel_ref = %RelationshipReference{
+      parent_name: "users",
+      child_name: "posts",
+      parent_alias: nil,
+      child_alias: nil
+    }
+
+    updated = SchemaNeeds.add_relationship(needs, rel_ref)
+
+    assert Enum.member?(updated.relationship_references, rel_ref)
+    assert length(updated.relationship_references) == 1
   end
 
-  test "add_relationship/2 doesn't duplicate relationships" do
-    source = TableRef.new("public", "users", nil)
-    target = TableRef.new("public", "posts", nil)
-    rel = RelationshipRef.has_many(source, target, "id", "user_id")
-    needs = SchemaNeeds.new([], [rel])
-    updated = SchemaNeeds.add_relationship(needs, rel)
+  test "add_relationship_reference/2 doesn't duplicate relationship references" do
+    rel_ref = %RelationshipReference{
+      parent_name: "users",
+      child_name: "posts",
+      parent_alias: nil,
+      child_alias: nil
+    }
 
-    assert MapSet.size(updated.relationships) == 1
-    assert MapSet.to_list(updated.relationships) == [rel]
+    needs = SchemaNeeds.new([], [rel_ref])
+    updated = SchemaNeeds.add_relationship(needs, rel_ref)
+
+    assert length(updated.relationship_references) == 1
+    assert updated.relationship_references == [rel_ref]
   end
 
-  test "add_relationship/2 doesn't duplicate relationships with different relationship types" do
-    source = TableRef.new("public", "users", nil)
-    target = TableRef.new("public", "posts", nil)
-    rel1 = RelationshipRef.has_many(source, target, "id", "user_id")
+  test "add_relationship_reference/2 doesn't duplicate relationship references with different aliases" do
+    rel_ref1 = %RelationshipReference{
+      parent_name: "users",
+      child_name: "posts",
+      parent_alias: nil,
+      child_alias: nil
+    }
 
-    # Same tables and columns, but different relationship type
-    rel2 = RelationshipRef.new(source, target, "id", "user_id", :has_one)
+    rel_ref2 = %RelationshipReference{
+      parent_name: "users",
+      child_name: "posts",
+      parent_alias: "u",
+      child_alias: "p"
+    }
 
-    needs = SchemaNeeds.new([], [rel1])
-    updated = SchemaNeeds.add_relationship(needs, rel2)
+    needs = SchemaNeeds.new([], [rel_ref1])
+    updated = SchemaNeeds.add_relationship(needs, rel_ref2)
 
-    # These would have the same hash, but now RelationshipRef has PartialEq with all fields
-    # so they should actually be distinct in the MapSet
-    assert MapSet.size(updated.relationships) == 2
-    assert MapSet.member?(updated.relationships, rel1)
-    assert MapSet.member?(updated.relationships, rel2)
+    # These would have the same parent_name and child_name, but different aliases
+    # so they should be distinct
+    assert length(updated.relationship_references) == 2
+    assert Enum.member?(updated.relationship_references, rel_ref1)
+    assert Enum.member?(updated.relationship_references, rel_ref2)
   end
 end
