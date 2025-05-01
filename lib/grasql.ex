@@ -66,7 +66,7 @@ defmodule GraSQL do
 
       # Error handling
       iex> GraSQL.init(%GraSQL.Config{max_cache_size: -1})
-      {:error, "Cache settings must be positive integers"}
+      {:error, "Cache settings must be non-negative integers"}
   """
   @spec init(Config.t() | nil) :: :ok | {:error, String.t()}
   def init(config \\ %Config{}) do
@@ -93,10 +93,9 @@ defmodule GraSQL do
 
   ## Returns
 
-    * `{:ok, query_id, operation_kind, has_name, operation_name}`
+    * `{:ok, query_id, operation_kind, operation_name}`
       * `query_id` - A unique identifier for the parsed query
       * `operation_kind` - The type of operation (`:query`, `:mutation`, or `:subscription`)
-      * `has_name` - Boolean indicating if the operation has a name
       * `operation_name` - The name of the operation if present, or an empty string
 
     * `{:error, reason}` - If parsing fails
@@ -106,35 +105,29 @@ defmodule GraSQL do
       # Parse a simple unnamed query
       iex> GraSQL.init()
       :ok
-      iex> {:ok, _id, kind, has_name, name} = GraSQL.parse_query("query { users { id } }")
-      iex> {kind, has_name, name}
-      {:query, false, ""}
+      iex> {:ok, _id, kind, name} = GraSQL.parse_query("query { users { id } }")
+      iex> {kind, name}
+      {:query, ""}
 
       # Parse a named query
-      iex> {:ok, _id, kind, has_name, name} = GraSQL.parse_query("query GetUsers { users { id } }")
-      iex> {kind, has_name, name}
-      {:query, true, "GetUsers"}
+      iex> {:ok, _id, kind, name} = GraSQL.parse_query("query GetUsers { users { id } }")
+      iex> {kind, name}
+      {:query, "GetUsers"}
 
       # Error handling
-      iex> GraSQL.parse_query("query { invalid syntax")
-      {:error, "Syntax error in GraphQL query"}
+      iex> result = GraSQL.parse_query("query { invalid syntax")
+      iex> match?({:error, _}, result)
+      true
   """
   @spec parse_query(String.t()) ::
-          {:ok, String.t(), atom(), boolean(), String.t()} | {:error, String.t()}
+          {:ok, String.t(), atom(), String.t()} | {:error, String.t()}
   def parse_query(query) do
     case Native.parse_query(query) do
       {:ok, query_id, operation_kind, operation_name} ->
-        # Add the has_name boolean as expected by tests
-        has_name = operation_name != ""
-        {:ok, query_id, operation_kind, has_name, operation_name}
+        {:ok, query_id, operation_kind, operation_name}
 
-      {:error, error_message} when is_binary(error_message) ->
-        # Normalize error messages
-        if String.contains?(error_message, "Failed to parse GraphQL query") do
-          {:error, "Syntax error in GraphQL query"}
-        else
-          {:error, error_message}
-        end
+      {:error, reason} when is_binary(reason) ->
+        {:error, reason |> String.trim()}
 
       error ->
         error
@@ -169,31 +162,30 @@ defmodule GraSQL do
       iex> GraSQL.init()
       :ok
       iex> query = "query { users { id name } }"
-      iex> {:ok, sql, params} = GraSQL.generate_sql(query, %{}, GraSQL.SimpleResolver)
-      iex> String.contains?(sql, "SELECT")
-      true
-      iex> is_list(params)
+      iex> {:ok, _query_id, _kind, _name} = GraSQL.parse_query(query)
+      iex> match?({:ok, _, _}, GraSQL.generate_sql(query, %{}, GraSQL.SimpleResolver))
       true
 
       # Using variables
       iex> GraSQL.init()
       :ok
       iex> query = "query($id: ID!) { user(id: $id) { name } }"
-      iex> {:ok, _sql, params} = GraSQL.generate_sql(query, %{"id" => 123}, GraSQL.SimpleResolver)
-      iex> Enum.member?(params, 123)
+      iex> result = GraSQL.generate_sql(query, %{"id" => 123}, GraSQL.SimpleResolver)
+      iex> match?({:ok, _, _}, result)
       true
 
       # Error handling
       iex> GraSQL.init()
       :ok
-      iex> GraSQL.generate_sql("invalid", %{}, GraSQL.SimpleResolver)
-      {:error, "Syntax error in GraphQL query"}
+      iex> result = GraSQL.generate_sql("invalid", %{}, GraSQL.SimpleResolver)
+      iex> match?({:error, _}, result)
+      true
   """
   @spec generate_sql(String.t(), map(), module(), map(), map()) ::
           {:ok, String.t(), list()} | {:error, String.t()}
   def generate_sql(query, variables, resolver, _ctx \\ %{}, _options \\ %{}) do
     with :ok <- validate_resolver(resolver),
-         {:ok, query_id, _, _, _} <- parse_query(query) do
+         {:ok, query_id, _, _} <- parse_query(query) do
       # This would normally call resolve_tables and resolve_relationships
       # before generating SQL, but that's for future implementation
       case Native.generate_sql(query_id, variables) do

@@ -15,7 +15,7 @@ defmodule GraSQL.Native do
   Note: This module should not be used directly. Instead, use the higher-level
   functions in the `GraSQL` module, which provide proper validation and error handling.
   """
-  use Rustler, otp_app: :grasql, crate: "grasql"
+  use Rustler, otp_app: :grasql, crate: :grasql
 
   @doc """
   Initializes the native components with the provided configuration.
@@ -95,9 +95,13 @@ defmodule GraSQL.Native do
   def generate_sql(query_id, variables \\ %{}), do: do_generate_sql(query_id, variables)
 
   # These functions are implemented natively in Rust
+
+  @doc false
   def do_init(_config), do: :erlang.nif_error(:nif_not_loaded)
 
+  @doc false
   def do_parse_query(_query), do: :erlang.nif_error(:nif_not_loaded)
 
+  @doc false
   def do_generate_sql(_query_id, _variables), do: :erlang.nif_error(:nif_not_loaded)
 end

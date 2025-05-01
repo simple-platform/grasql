@@ -13,7 +13,7 @@ defmodule GraSQL.ConfigTest do
 
     test "rejects negative cache settings" do
       config = %Config{max_cache_size: -1}
-      assert {:error, "Cache settings must be positive integers"} = Config.validate(config)
+      assert {:error, "Cache settings must be non-negative integers"} = Config.validate(config)
     end
 
     test "rejects invalid operator map" do
@@ -93,17 +93,17 @@ defmodule GraSQL.ConfigTest do
 
     test "validates cache settings" do
       # Test with invalid max_cache_size
-      assert {:error, "Cache settings must be positive integers"} =
+      assert {:error, "Cache settings must be non-negative integers"} =
                Config.validate(%Config{max_cache_size: 0})
 
-      assert {:error, "Cache settings must be positive integers"} =
+      assert {:error, "Cache settings must be non-negative integers"} =
                Config.validate(%Config{max_cache_size: "1000"})
 
       # Test with invalid cache_ttl
-      assert {:error, "Cache settings must be positive integers"} =
+      assert {:error, "Cache settings must be non-negative integers"} =
                Config.validate(%Config{cache_ttl: -1})
 
-      assert {:error, "Cache settings must be positive integers"} =
+      assert {:error, "Cache settings must be non-negative integers"} =
                Config.validate(%Config{cache_ttl: "3600"})
 
       # Test with valid cache settings

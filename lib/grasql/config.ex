@@ -128,7 +128,7 @@ defmodule GraSQL.Config do
       {:ok, %GraSQL.Config{}}
 
       iex> GraSQL.Config.validate(%GraSQL.Config{max_cache_size: -1})
-      {:error, "Cache settings must be positive integers"}
+      {:error, "Cache settings must be non-negative integers"}
 
       iex> GraSQL.Config.validate(%GraSQL.Config{default_join_type: :full})
       {:error, "Join settings are invalid"}
@@ -172,7 +172,7 @@ defmodule GraSQL.Config do
       iex> native_config.operators
       %{"eq" => "_eq", "gt" => "_gt"}
   """
-  @spec to_native_config(t()) :: map()
+  @spec to_native_config(t()) :: t()
   def to_native_config(%__MODULE__{} = config) do
     # Convert atom keys to strings for Rust compatibility
     string_operators = for {k, v} <- config.operators, into: %{}, do: {Atom.to_string(k), v}

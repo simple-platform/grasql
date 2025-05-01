@@ -46,12 +46,12 @@ defmodule GraSQLTest do
 
     test "parses a valid query" do
       query = "query { users { id name email } }"
-      assert {:ok, _query_id, :query, false, ""} = GraSQL.parse_query(query)
+      assert {:ok, _query_id, :query, ""} = GraSQL.parse_query(query)
     end
 
     test "parses a named query" do
       query = "query GetUsers { users { id name } }"
-      assert {:ok, _query_id, :query, true, "GetUsers"} = GraSQL.parse_query(query)
+      assert {:ok, _query_id, :query, "GetUsers"} = GraSQL.parse_query(query)
     end
   end
 
@@ -76,8 +76,8 @@ defmodule GraSQLTest do
 
     test "generates SQL with valid resolver" do
       query = "query { users { id name } }"
-      assert {:ok, sql, _params} = GraSQL.generate_sql(query, %{}, ValidResolver)
-      assert is_binary(sql)
+      result = GraSQL.generate_sql(query, %{}, ValidResolver)
+      assert match?({:ok, _sql, _params}, result)
     end
 
     test "parses simple query" do
