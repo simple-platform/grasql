@@ -16,7 +16,7 @@ The QST serves several critical purposes:
 
 5. **Complete parameterization**: All values in the query (both user-provided variables and inline literals) are converted to parameters, enhancing security, performance, and maintainability.
 
-## Overall Structure
+## Structure
 
 At the highest level, a QST consists of:
 
