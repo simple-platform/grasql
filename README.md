@@ -116,7 +116,7 @@ context = %{user_id: current_user.id, tenant: "my_tenant"}
 
 case GraSQL.generate_sql(query, variables, MyApp.GraphQLResolver, context) do
   {:ok, sql, params} ->
-    # Execute the SQL with your database database client
+    # Execute the SQL with your database client
     Postgrex.query!(conn, sql, params)
 
   {:error, reason} ->
