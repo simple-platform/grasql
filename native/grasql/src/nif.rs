@@ -122,7 +122,7 @@ pub fn do_generate_sql<'a>(
     let sql = generate_sql(&parsed_query_info);
 
     // Create an empty list for parameters
-    let params = Vec::<Term<'a>>::new();
+    let params: Vec<Term<'a>> = Vec::new();
 
-    Ok((atoms::ok(), sql, params.encode(env)).encode(env))
+    Ok((atoms::ok(), sql, params).encode(env))
 }
