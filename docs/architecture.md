@@ -1,392 +1,355 @@
 # GraSQL Architecture
 
-GraSQL is a high-performance GraphQL to SQL compiler written in Elixir with Rust (via Rustler) for compute-intensive operations. It's designed to efficiently transform GraphQL queries into optimized SQL, with a focus on performance, memory efficiency, and developer ergonomics.
+## Introduction
 
-## Design Principles
+GraSQL is a high-performance GraphQL to SQL compiler specifically optimized for PostgreSQL databases. It translates GraphQL queries into efficient SQL statements that leverage PostgreSQL's JSON functions to return structured data directly from the database, eliminating the need for additional processing in the application layer.
 
-1. **Performance First**: Optimized for high-throughput environments (100,000+ queries/second)
-2. **Memory Efficiency**: Minimal memory footprint per query
-3. **Developer Ergonomics**: Clean, intuitive API that's easy to use correctly
-4. **Separation of Concerns**: Clear boundaries between phases
-5. **Minimalism**: Focus on doing one thing extremely well
+This document describes the architecture of GraSQL, including its major components, the transformation process, and key performance optimizations.
 
-## High-Level Architecture
+## Architecture Overview
 
-GraSQL uses a structured resolver approach that balances performance with flexibility:
+GraSQL is composed of three main components:
 
-```mermaid
-flowchart LR
-    subgraph Phase1["Phase 1"]
-      direction TB
-      A1[Parse GraphQL using graphql-query] --> A2[Extract tables, fields, relationships]
-      A2 --> A3[Process variables and operation type]
-    end
+1. **Parser**: Converts GraphQL query strings into an internal representation called Query Structure Tree (QST).
+2. **Schema Resolver**: Enriches the QST with database metadata like fully qualified table names and relationship information.
+3. **SQL Compiler**: Generates optimized SQL from the enriched QST, using PostgreSQL-specific features for maximum performance.
 
-    subgraph ResolverProcessing["Resolver Processing"]
-      direction TB
-      B1[Resolve tables] --> B2[Resolve relationships]
-      B2 --> B3[Set permissions]
-      B3 --> B4[Set overrides (mutations only)]
-    end
+These components work together in a pipeline to transform GraphQL queries into highly efficient SQL statements.
 
-    subgraph Phase2["Phase 2"]
-      direction TB
-      C1[Apply filters and overrides] --> C2[Generate optimized SQL]
-      C2 --> C3[Parameterize values]
-      C3 --> C4[Ensure transaction safety]
-    end
+## Workflow and Processing Phases
 
-    Phase1 -->|Initial QST| ResolverProcessing
-    ResolverProcessing -->|Enriched QST| Phase2
-```
+### Initialization
 
-## Core Components
+When initializing GraSQL, users can configure global options such as:
 
-### 1. Query Structure Tree (QST)
+- How to identify aggregate fields in GraphQL queries (e.g., fields ending with \_agg)
+- How to identify single vs. many select/mutation operations
+- Operator mappings (e.g., \_eq for =, \_gt for >, etc.)
+- Join table handling preferences for many-to-many relationships
 
-The QST is a database-agnostic representation of a GraphQL query. It captures:
+### Processing Phases
 
-- Operation type (query, mutation)
-- Selected fields and their relationships
-- Filter conditions and arguments
-- Variables and their types
+GraSQL processes GraphQL queries in three distinct phases:
 
-The QST is initially created during Phase 1 and then enriched by the resolver methods before SQL generation in Phase 2.
+#### Phase 1: Query Scanning
 
-### 2. Parser Module
+- User submits a GraphQL query string to the Parser NIF
+- Parser parses the GraphQL query and extracts what needs resolution
+- Parser generates a unique query ID and stores the parsed query in an internal cache
+- Parser returns the query ID and resolution request to Elixir
+- Outputs: Query ID and Resolution Request
 
-Uses the high-performance [graphql-query](https://github.com/StellateHQ/graphql-query) library to:
+#### Phase 2: Schema Resolution
 
-- Parse GraphQL syntax
-- Extract operation structure
-- Process variables and arguments
-- Identify schema requirements
+- Elixir code processes the resolution request using user-implemented resolvers
+- Resolver maps GraphQL fields to database tables and relationships
+- Resolver adds fully qualified table names, join conditions, etc.
+- Outputs: Resolved Information
 
-### 3. Resolver Interface
+#### Phase 3: SQL Generation
 
-A central part of GraSQL is the resolver interface, which requires four key methods:
+- Elixir calls back to the SQL Compiler NIF with the query ID, resolved information, and variables
+- Compiler retrieves the cached parsed query using the query ID
+- Compiler builds a complete QST using the parsed query and resolved information
+- Compiler generates optimized PostgreSQL SQL with parameterized queries
+- Compiler removes the parsed query from the cache to free memory
+- Outputs: SQL string + parameters
 
-1. **resolve_tables/1**: Maps GraphQL types to database tables and their columns
-2. **resolve_relationships/1**: Defines relationships between tables
-3. **set_permissions/1**: Applies access control rules through filters
-4. **set_overrides/1**: Provides value overrides for mutations (only called for mutations)
+This approach eliminates the need to parse the GraphQL query twice, significantly improving performance for complex queries.
 
-This structured approach ensures a clear separation of concerns while giving applications complete control over schema mapping and permissions.
+## Query Structure Tree (QST)
 
-### 4. Permission System
+The QST is the internal representation of a GraphQL query used throughout GraSQL. It serves as an intermediate representation that bridges GraphQL and SQL concepts.
 
-GraSQL supports flexible permission rules through the resolver's `set_permissions` method:
+### Key Elements of the QST
 
-```elixir
-# Examples of permission filters that might be added in set_permissions
-def set_permissions(qst) do
-  Map.update(qst, :permissions, [], fn current_permissions ->
-    [
-      %{field: "users.id", operation: "equals", value: current_user_id()},
-      %{
-        operation: "or",
-        conditions: [
-          %{field: "posts.user_id", operation: "equals", value: current_user_id()},
-          %{field: "posts.is_public", operation: "equals", value: true}
-        ]
+- **Operation Type**: Query or Mutation (Subscription not supported)
+- **Root Fields**: Top-level fields in the query, mapped to tables
+- **Selection Sets**: Fields selected at each level
+- **Arguments**: Field arguments like filters, pagination, and sorting
+- **Variables**: Variable definitions and usages
+- **Relationships**: Nested field relationships
+- **Aggregations**: Aggregation operations like count, sum, etc.
+
+### Example QST Structure (Simplified)
+
+```json
+{
+  "operation_type": "query",
+  "root_fields": [
+    {
+      "name": "users",
+      "alias": "active_users",
+      "table": null, // Filled by Schema Resolver
+      "selection_set": [
+        { "name": "id" },
+        { "name": "name" },
+        {
+          "name": "posts",
+          "relationship": { "type": "one_to_many" },
+          "table": null, // Filled by Schema Resolver
+          "selection_set": [{ "name": "title" }, { "name": "content" }],
+          "arguments": {
+            "where": { "published": { "_eq": true } },
+            "order_by": { "created_at": "desc" },
+            "limit": 5
+          }
+        }
+      ],
+      "arguments": {
+        "where": { "status": { "_eq": "active" } }
       }
-      | current_permissions
-    ]
-  end)
-end
+    }
+  ],
+  "variables": {}
+}
 ```
 
-**Overrides**: Modifications applied to mutations via the `set_overrides` method:
+## Parser Component
 
-```elixir
-# Examples of mutation overrides that might be added in set_overrides
-def set_overrides(qst) do
-  Map.update(qst, :overrides, [], fn current_overrides ->
-    [
-      %{field: "posts.updated_at", value: :current_timestamp},
-      %{field: "posts.updated_by", value: current_user_id()}
-      | current_overrides
-    ]
-  end)
-end
+The Parser is responsible for scanning GraphQL query strings to identify what needs resolution, and for caching the parsed query for later use in SQL generation.
+
+### Parser Responsibilities
+
+1. Parse and validate GraphQL syntax
+2. Extract fields and relationships that need resolution
+3. Cache the parsed query for reuse in Phase 3
+4. Generate a unique query ID to reference the cached query
+5. Identify operation type (query/mutation)
+6. Handle variables and their types
+
+### Query Caching
+
+To avoid parsing the GraphQL query twice, the Parser implements an internal caching mechanism:
+
+1. After parsing a query, the Parser stores the parsed AST in a process-wide thread-safe cache
+2. The cache is keyed by a unique query ID (hash of the query string)
+3. The query ID is returned to Elixir and passed back in Phase 3
+4. In Phase 3, the SQL Compiler retrieves the parsed query from the cache
+5. After SQL generation, the parsed query is removed from the cache
+
+The cache is implemented as a global concurrent hash map (using libraries like `dashmap`), ensuring that:
+
+- Cached queries are accessible from any scheduler thread/CPU core
+- Access is thread-safe without significant contention
+- Memory usage is managed through automatic cleanup
+
+In multi-core environments, where Phase 1 and Phase 3 might execute on different CPU cores, this shared cache ensures the parsed query remains accessible. If a cache miss occurs (which is rare but possible), the system transparently falls back to reparsing the query, ensuring robustness without compromising the API.
+
+### Parser Limitations
+
+- Does not support GraphQL Fragments
+- Does not support GraphQL Directives
+- Does not support GraphQL Subscriptions
+
+## Schema Resolver Component
+
+The Schema Resolver connects the abstract GraphQL schema to concrete database tables and relationships. It's implemented by library users to provide database-specific metadata.
+
+### Schema Resolver Behavior
+
+The Schema Resolver is an Elixir behavior that must be implemented by users of the library. It includes:
+
+1. `resolve_table/2`: Maps a GraphQL type to a fully qualified database table
+2. `resolve_relationship/2`: Maps a nested field to a table relationship
+
+### Context Passing
+
+The Schema Resolver receives a context map which can contain:
+
+- Tenant ID
+- User ID
+- User roles
+- Any other application-specific data
+
+This context is passed unchanged to user-implemented resolvers, allowing for access control and multi-tenancy.
+
+## SQL Compiler Component
+
+The SQL Compiler generates optimized PostgreSQL SQL from the enriched QST and variables. It's the most complex component and incorporates several optimization techniques.
+
+### SQL Generation Techniques
+
+1. **JSON Construction**:
+
+   - Uses PostgreSQL's JSON functions (`json_build_object`, `json_agg`, `row_to_json`) for direct response construction
+   - Uses `coalesce` with empty arrays to handle null results (e.g., `coalesce(json_agg(...), '[]')`)
+   - Builds nested JSON structures that exactly match the GraphQL response shape
+
+2. **Nested Queries**:
+
+   - Uses LATERAL JOINs for efficient nested data fetching
+   - Properly handles one-to-many and many-to-many relationships
+   - Constructs nested objects using subqueries and JSON aggregation
+   - Uses table aliases with a clear, hierarchical naming convention
+
+3. **Filtering**:
+
+   - Translates GraphQL arguments to WHERE clauses with proper operator mapping (e.g., `_eq` → `=`, `_ilike` → `ILIKE`)
+   - Supports complex logical operations (AND, OR, NOT)
+   - Handles nested filters on relationships using EXISTS subqueries
+   - Supports filtering on deeply nested relationships (e.g., users → roles → application → name)
+   - Applies proper type casting where needed (e.g., `('value') :: text`)
+
+4. **Aggregations**:
+
+   - Generates efficient aggregation queries (COUNT, SUM, AVG, etc.)
+   - Supports aggregation options like DISTINCT and column selection
+   - Returns aggregation results alongside entity data in a single query
+   - Creates properly structured JSON objects for aggregate results
+
+5. **Pagination and Sorting**:
+
+   - Implements offset/limit pagination at any nesting level
+   - Applies LIMIT and OFFSET clauses to the appropriate subqueries
+   - Supports multi-field sorting with direction control
+   - Preserves pagination parameters through parameterization
+
+6. **Parameterization**:
+   - All user inputs are properly parameterized to prevent SQL injection
+   - Extracts inline values to parameters for better query caching
+   - Handles complex variable types including arrays and objects
+
+### SQL Output Structure
+
+The SQL generated for a GraphQL query with nested relationships and aggregations typically follows this pattern:
+
+```sql
+SELECT
+  json_build_object(
+    'data', json_build_object(
+      'root_field', coalesce(json_agg(
+        row_to_json(q0)
+      ), '[]')
+    )
+  ) AS result
+FROM (
+  -- Main query with filters
+  SELECT
+    t0.id,
+    t0.name,
+    (
+      -- Relationship subquery using LATERAL JOIN
+      SELECT coalesce(json_agg(
+        row_to_json(q1)
+      ), '[]') AS related_items
+      FROM (
+        SELECT
+          t1.id,
+          t1.title,
+          -- Potentially more nested relationships
+          (
+            SELECT json_build_object(
+              'aggregate', json_build_object(
+                'count', COUNT(*)
+              )
+            )
+            FROM related_table t2
+            WHERE t2.parent_id = t1.id
+          ) AS aggregation
+        FROM related_table t1
+        WHERE t1.parent_id = t0.id
+        ORDER BY t1.created_at DESC
+        LIMIT $1 OFFSET $2
+      ) q1
+    ) AS relationship
+  FROM base_table t0
+  WHERE
+    -- Simple filter
+    t0.status = $3
+    -- Complex relationship filter
+    AND EXISTS (
+      SELECT 1
+      FROM join_table j0
+      JOIN other_table o0 ON j0.other_id = o0.id
+      WHERE
+        j0.base_id = t0.id
+        AND o0.property = $4
+    )
+) q0
 ```
 
-### 5. SQL Generator
+This structure:
 
-Generates optimized PostgreSQL queries with features including:
+1. Returns the complete response directly from PostgreSQL as a JSON object
+2. Exactly matches the shape of the expected GraphQL response
+3. Uses a consistent, intuitive naming convention for table aliases (t0, t1, etc. for tables; q0, q1, etc. for subqueries)
+4. Handles empty results with coalesce to ensure consistent response format
+5. Places filter conditions at the appropriate query level
+6. Uses parameterization ($1, $2, etc.) for all variable inputs
 
-- Efficient joins and relationship handling
-- Parameterized queries for security
-- JSON aggregation for nested queries
-- Transaction-safe operations
+## Implementation Optimizations
 
-## API Design
+GraSQL's Rust components employ several optimization techniques to ensure maximum performance:
 
-GraSQL provides a clean, focused API that emphasizes both performance and usability:
+1. **String Interning**: Identical string values (like field names, operators, etc.) are stored only once and referenced multiple times, reducing memory usage and improving string comparison performance.
 
-### Generate SQL
+2. **Copy-on-Write (COW)**: Data structures use COW semantics where appropriate to avoid unnecessary cloning, allowing efficient sharing of data while maintaining immutability.
 
-```elixir
-@spec generate_sql(
-  query :: String.t(),
-  variables :: map() | String.t(),
-  resolver :: module()
-) :: {:ok, SqlResult.t()} | {:error, Error.t()}
-def generate_sql(query, variables, resolver) do
-  # Implementation
-end
-```
+3. **Arena Allocation**: Related objects that have the same lifetime are allocated together in memory arenas, reducing allocation overhead and improving cache locality.
 
-The resolver module must implement these methods:
+4. **SmallVec**: Collections expected to contain few elements use stack allocation via `SmallVec` instead of heap allocation, eliminating allocation overhead for common cases.
 
-```elixir
-# Maps GraphQL types to database tables
-@spec resolve_tables(qst :: map()) :: map()
-def resolve_tables(qst)
+5. **Function Inlining**: Critical functions are marked for inlining, eliminating function call overhead in performance-sensitive code paths. Since binary size is not a primary concern for server-side applications, GraSQL prioritizes runtime performance through aggressive inlining.
 
-# Defines relationships between tables
-@spec resolve_relationships(qst :: map()) :: map()
-def resolve_relationships(qst)
+These low-level optimizations significantly improve parsing speed, memory efficiency, and SQL generation performance, especially for complex queries with deep nesting and numerous fields.
 
-# Applies access control rules
-@spec set_permissions(qst :: map()) :: map()
-def set_permissions(qst)
+## Performance Considerations
 
-# Provides value overrides for mutations (only called for mutations)
-@spec set_overrides(qst :: map()) :: map()
-def set_overrides(qst)
-```
+GraSQL focuses on performance in several key ways:
 
-Result structure:
+### 1. Eliminating the N+1 Query Problem
 
-```elixir
-defmodule GraSQL.SqlResult do
-  defstruct [
-    sql: "",              # Generated SQL query
-    parameters: [],       # Parameter values
-    parameter_types: []   # Parameter type information
-  ]
+By generating SQL that returns complete nested structures with LATERAL JOINs, GraSQL eliminates the N+1 query problem common in many GraphQL implementations. A single SQL query can fetch an entire graph of related data.
 
-  @type t :: %__MODULE__{
-    sql: String.t(),
-    parameters: list(any()),
-    parameter_types: list(String.t())
-  }
-end
-```
+### 2. Leveraging PostgreSQL's JSON Capabilities
 
-## Data Flow
+Instead of fetching raw data and constructing the response in application code, GraSQL pushes this work to PostgreSQL using its native JSON functions. This:
 
-```mermaid
-sequenceDiagram
-    participant Client
-    participant GraSQL_Phase1 as "GraSQL Phase 1 (Rust)"
-    participant Resolver as "Resolver"
-    participant GraSQL_Phase2 as "GraSQL Phase 2 (Rust)"
-    participant Database
+- Reduces network traffic by sending only the final JSON result
+- Eliminates serialization/deserialization overhead
+- Takes advantage of PostgreSQL's internal optimization capabilities
 
-    Client->>GraSQL_Phase1: GraphQL query + variables
-    GraSQL_Phase1->>Resolver: Initial QST
+### 3. Strategic Use of EXISTS Subqueries
 
-    Resolver->>Resolver: resolve_tables
-    Resolver->>Resolver: resolve_relationships
-    Resolver->>Resolver: set_permissions
-    Note right of Resolver: set_overrides only for mutations
+For relationship filtering, GraSQL uses EXISTS subqueries which are often more efficient than JOINs for filtering purposes, especially when:
 
-    Resolver->>GraSQL_Phase2: Enriched QST
-    GraSQL_Phase2->>Client: SQL + parameters
+- Only checking for existence of related records
+- Filtering through multiple levels of relationships
+- Working with complex filtering conditions
 
-    Client->>Database: Execute SQL query
-    Database->>Client: Query results
-```
+### 4. Query Parameterization and Plan Caching
 
-## Performance Optimizations
+Parameterized queries allow PostgreSQL to cache execution plans, dramatically improving performance for repeated queries with different variables. GraSQL ensures that:
 
-GraSQL is designed from the ground up to deliver exceptional performance. Based on benchmarks of underlying components and our current system performance, we've established aggressive yet achievable performance targets:
+- All user inputs are properly parameterized
+- Constants and literal values are extracted as parameters when beneficial
+- Query structure remains stable across executions with different inputs
 
-### Performance Targets
+### 5. Single-Round-Trip Architecture
 
-| Component                       | Target Performance | Current System | Improvement |
-| ------------------------------- | ------------------ | -------------- | ----------- |
-| GraphQL parsing/validation      | <50μs              | ~1ms           | ~20x        |
-| Query analysis + SQL generation | <500μs             | ~2ms           | ~4x         |
-| Total pre-database time         | <1ms               | ~3ms           | ~3x         |
-| Sustained QPS                   | 15-25K+            | ~10K           | ~1.5-2.5x   |
-| Burst QPS                       | 40-50K+            | ~15K           | ~2.5-3.5x   |
-| End-to-end P50                  | <10ms              | ~20ms          | ~2x         |
-| End-to-end P95                  | <25ms              | ~50ms          | ~2x         |
-| End-to-end P99                  | <50ms              | ~100ms         | ~2x         |
+The entire JSON response is constructed and returned in a single database query, eliminating multiple round-trips between the application and database, which is especially important for high-latency connections.
 
-These targets are still extremely ambitious while acknowledging system realities:
+### 6. Optimized Data Loading
 
-- **NIF overhead**: Accounts for the Elixir/Rust boundary crossing overhead
-- **Query complexity**: Allows appropriate time for analysis of complex queries and permissions
-- **Database reality**: Acknowledges that end-to-end time includes database execution, which typically takes several milliseconds
-- **Hardware scaling**: QPS targets represent major throughput improvements achievable on standard hardware
+GraSQL generates SQL that:
 
-### Optimization Strategies
+- Only selects the fields requested in the GraphQL query
+- Applies filtering as early as possible in the query execution
+- Uses appropriate join types based on relationship cardinality
+- Handles pagination at the database level to limit result size
 
-1. **Zero-Copy Parsing**: The [graphql-query](https://github.com/StellateHQ/graphql-query) Rust library minimizes allocations during GraphQL parsing with benchmark results showing exceptional performance:
+### 7. Query Parsing Optimization
 
-   ```
-   graphql_ast_parse_graphql_query: 2,886 ns/iter
-   graphql_ast_validate: 1,504 ns/iter
-   graphql_ast_print_graphql_query: 1,082 ns/iter
-   ```
+GraSQL implements a parse-once strategy to avoid the computational cost of parsing complex GraphQL queries multiple times:
 
-2. **Minimal Schema Resolution**: Only resolves schema information for tables and fields actually used in the query, reducing memory overhead and computation time.
+- Parsed queries are cached after Phase 1
+- The cached representation is reused in Phase 3
+- This eliminates redundant parsing work, particularly beneficial for large and complex queries
+- Internal cache management ensures memory efficiency
 
-3. **Efficient BEAM/Rust Interface**: Strategic design of the Elixir-Rust boundary to minimize crossings:
+## Conclusion
 
-   - Single round-trip per processing phase
-   - Initially using Rustler's default serialization (ETF via serde)
-   - Measurement-driven optimization of boundary crossings
+GraSQL's architecture is designed for high performance and flexibility. By decomposing the problem into distinct phases (parsing, schema resolution, and SQL generation), it provides a clean separation of concerns that makes the library both powerful and adaptable.
 
-4. **Efficient Data Structures**: Custom data structures optimized for query representation:
-
-   - Pre-allocated capacity based on query analysis
-   - Cache-friendly memory layouts
-   - Minimal indirection and pointer chasing
-
-5. **Query Plan Optimization**:
-
-   - Filter push-down to minimize rows processed
-   - Join order selection based on cardinality
-   - Subquery optimization for complex hierarchies
-   - Smart pagination strategies (keyset vs offset)
-
-6. **Parameter Optimization**:
-
-   - Efficient mapping of variables to SQL parameters
-   - Type-aware parameter handling
-   - Batch parameterization of similar values
-
-7. **Memory Management**:
-   - Careful control of allocations with arena strategies
-   - Buffer reuse for similar queries
-   - Avoidance of unnecessary copies
-   - Capacity pre-allocation where size is predictable
-
-### Implementation Priorities
-
-The performance optimization effort will focus on these key areas:
-
-1. **Measurement**: Comprehensive benchmarking with realistic workloads to establish baseline and track improvements
-
-2. **Hot Paths**: Identifying and optimizing the most frequently executed code paths:
-
-   - GraphQL parsing and validation
-   - SQL generation for common query patterns
-   - JSON result structure construction
-
-3. **Data Flow**: Optimizing the flow of data through the system:
-
-   - Minimizing transformations between representations
-   - Eliminating redundant processing
-   - Strategic caching of intermediate results
-
-4. **Concurrency**: Ensuring efficient execution under high load:
-   - Non-blocking processing pipelines
-   - Efficient use of available cores
-   - Thread coordination with minimal synchronization
-
-With these optimizations, GraSQL aims to provide best-in-class performance while maintaining a clean, maintainable codebase and developer-friendly API.
-
-## Usage Example
-
-```elixir
-# Sample resolver implementation
-defmodule MyApp.Resolver do
-  def resolve_tables(qst) do
-    # Map GraphQL types to database tables
-    # Example: add table info to QST based on types
-    Map.update(qst, :tables, %{}, fn tables ->
-      Map.merge(tables, %{
-        "User" => %{schema: "public", table: "users", columns: ["id", "name", "email"]},
-        "Post" => %{schema: "public", table: "posts", columns: ["id", "title", "content", "user_id"]}
-      })
-    end)
-  end
-
-  def resolve_relationships(qst) do
-    # Define relationships between tables
-    # Example: add relationship info to QST
-    Map.update(qst, :relationships, %{}, fn relationships ->
-      Map.merge(relationships, %{
-        "User.posts" => %{
-          parent_table: "users",
-          child_table: "posts",
-          parent_key: "id",
-          child_key: "user_id"
-        }
-      })
-    end)
-  end
-
-  def set_permissions(qst) do
-    # Apply permission filters
-    # Example: add permission filters to QST
-    Map.update(qst, :permissions, [], fn permissions ->
-      [
-        %{field: "users.id", operation: "equals", value: current_user_id()},
-        %{
-          operation: "or",
-          conditions: [
-            %{field: "posts.user_id", operation: "equals", value: current_user_id()},
-            %{field: "posts.is_public", operation: "equals", value: true}
-          ]
-        }
-        | permissions
-      ]
-    end)
-  end
-
-  def set_overrides(qst) do
-    # Set overrides for mutations
-    # Example: add value overrides to QST
-    Map.update(qst, :overrides, [], fn overrides ->
-      [
-        %{field: "posts.updated_at", value: :current_timestamp},
-        %{field: "posts.updated_by", value: current_user_id()}
-        | overrides
-      ]
-    end)
-  end
-
-  defp current_user_id do
-    # Implementation to get current user ID
-    "current-user-123"
-  end
-end
-
-# Sample workflow
-def execute_graphql(query, variables, _user_id) do
-  # Generate SQL using the resolver
-  case GraSQL.generate_sql(query, variables, MyApp.Resolver) do
-    {:ok, sql_result} ->
-      # Execute the query
-      DB.execute(sql_result.sql, sql_result.parameters)
-
-    {:error, error} ->
-      handle_error(error)
-  end
-end
-```
-
-## Transaction Safety
-
-GraSQL ensures all generated SQL is safe to use in transactions by:
-
-1. Using proper parameter binding to prevent injection
-2. Avoiding non-deterministic functions where inappropriate
-3. Properly isolating subqueries
-4. Managing joins and relations to maintain consistency
-
-## Future Extensions
-
-While focusing on PostgreSQL initially, GraSQL is designed with clean interfaces that will allow future support for:
-
-1. Additional database dialects
-2. Enhanced optimization strategies
-3. More sophisticated permission models
-4. Extended GraphQL feature support
+The focus on generating optimized PostgreSQL-specific SQL that returns complete JSON responses directly from the database distinguishes GraSQL from other GraphQL implementations and allows it to achieve exceptional performance.

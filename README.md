@@ -4,26 +4,37 @@
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/grasql/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
-A high-performance GraphQL to SQL compiler optimized for PostgreSQL, used by the Simple Platform.
+A high-performance GraphQL to SQL compiler optimized for PostgreSQL that generates efficient SQL directly from GraphQL queries.
 
 ## Overview
 
-GraSQL is designed to transform GraphQL queries into highly optimized SQL with extreme performance (100K+ queries/second). The library uses a resolver approach that efficiently handles schema resolution, permissions, and query optimization.
+GraSQL transforms GraphQL queries into highly optimized PostgreSQL SQL statements. It eliminates the N+1 query problem and reduces application-layer processing by generating SQL that returns complete nested data structures as JSON directly from the database.
 
-## Architecture
-
-For detailed architecture information, see the [Architecture Document](docs/architecture.md).
+The library uses a resolver approach for schema mapping and permissions, making it highly adaptable to different database schemas and authorization requirements.
 
 ## Features
 
-- Ultra-fast GraphQL to SQL compilation using Rust (via Rustler)
-- Structured resolver approach for schema mapping and permissions
-- Efficient schema resolution that minimizes memory usage
-- Cross-schema query support for complex database structures
-- Permission filtering and mutation value overrides
-- Transaction-safe SQL generation
-- Parameterized queries for security and performance
-- Used and maintained by the Simple Platform
+- **High Performance**:
+  - Generate optimized SQL that returns fully structured JSON results directly from PostgreSQL
+  - Intelligent query parsing cache eliminates redundant processing
+  - Single-round-trip database communication
+- **Complete Query Support**:
+  - Simple and complex field selection
+  - Nested queries with arbitrary depth
+  - Filtering at root and nested levels
+  - Sorting and pagination
+  - Aggregation functions
+- **Powerful Schema Resolution**:
+  - Map GraphQL types to database tables/schemas
+  - Define complex relationships (one-to-one, one-to-many, many-to-many)
+  - Apply permission filtering
+- **Security**:
+  - Fully parameterized queries to prevent SQL injection
+  - Context-aware resolvers for authentication/authorization
+- **Developer Experience**:
+  - Clean separation between schema definition and query execution
+  - No need to write SQL or resolver functions for each field
+  - Built with Rust for performance-critical components
 
 ## Installation
 
@@ -45,62 +56,83 @@ mix deps.get
 
 ## Usage
 
-GraSQL uses a resolver-based approach for maximum efficiency and clarity:
+### 1. Define a Schema Resolver
+
+The Schema Resolver maps GraphQL types to your database tables and relationships:
 
 ```elixir
-defmodule MyApp.GraphQL do
-  alias GraSQL
+defmodule MyApp.GraphQLResolver do
+  @behaviour GraSQL.SchemaResolver
 
-  # First, implement a resolver that maps GraphQL types to your database
-  defmodule Resolver do
-    # Map GraphQL types to database tables
-    def resolve_tables(qst) do
-      # Implementation that adds table information to the QST
-      # ...
-    end
-
-    # Define relationships between tables
-    def resolve_relationships(qst) do
-      # Implementation that adds relationship information to the QST
-      # ...
-    end
-
-    # Apply permission filters
-    def set_permissions(qst) do
-      # Implementation that adds permission filters to the QST
-      # ...
-    end
-
-    # Set overrides for mutations (only called for mutation operations)
-    def set_overrides(qst) do
-      # Implementation that adds value overrides to the QST
-      # ...
-    end
+  @impl true
+  def resolve_table(table, ctx) do
+    # Map GraphQL type to database table
+    # Add tenant/user filtering if needed
+    %{
+      schema: "public",
+      name: table.name,
+      # Add other metadata as needed
+    }
   end
 
-  def execute_query(query, variables, _user_id) do
-    # Generate SQL using the resolver
-    case GraSQL.generate_sql(query, variables, Resolver) do
-      {:ok, sql_result} ->
-        # Execute the SQL with your database client
-        MyApp.Database.execute(sql_result.sql, sql_result.parameters)
-
-      {:error, error} ->
-        {:error, handle_error(error)}
-    end
+  @impl true
+  def resolve_relationship(relationship, ctx) do
+    # Map GraphQL field to database relationship
+    %{
+      source_table: relationship.source_table,
+      target_table: relationship.target_table,
+      join_type: :inner,
+      conditions: [
+        %{
+          source_column: "id",
+          target_column: "#{relationship.source_table}_id"
+        }
+      ]
+    }
   end
 end
 ```
 
-## Performance
+### 2. Execute Queries
 
-GraSQL achieves exceptional performance through:
+Use the `GraSQL` module to parse GraphQL and generate SQL:
 
-- Rust-powered parsing and SQL generation
-- Minimal memory usage with focused schema resolution
-- Efficient binary encoding for cross-language operations
-- Query optimization techniques
-- Fast parameterization
+```elixir
+query = """
+{
+  users(where: { status: { _eq: "active" } }) {
+    id
+    name
+    posts(limit: 5, order_by: { created_at: desc }) {
+      title
+      body
+    }
+  }
+}
+"""
+
+variables = %{}
+context = %{user_id: current_user.id, tenant: "my_tenant"}
+
+case GraSQL.generate_sql(query, variables, MyApp.GraphQLResolver, context) do
+  {:ok, sql, params} ->
+    # Execute the SQL with your database database client
+    Postgrex.query!(conn, sql, params)
+
+  {:error, reason} ->
+    # Handle error
+end
+```
+
+Behind the scenes, GraSQL intelligently caches parsed queries to avoid redundant processing, ensuring optimal performance even for complex GraphQL operations.
+
+## Limitations
+
+GraSQL currently does not support:
+
+- **GraphQL Fragments**: Custom fragments for reusable selection sets
+- **GraphQL Directives**: Annotations like @include and @skip
+- **GraphQL Subscriptions**: Real-time data subscriptions
 
 ## Documentation
 

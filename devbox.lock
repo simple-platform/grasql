@@ -198,6 +198,54 @@
         }
       }
     },
+    "flatbuffers@25.1.24": {
+      "last_modified": "2025-03-11T17:52:14Z",
+      "resolved": "github:NixOS/nixpkgs/0d534853a55b5d02a4ababa1d71921ce8f0aee4c#flatbuffers",
+      "source": "devbox-search",
+      "version": "25.1.24",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/93n0wr1r1d247rn4n6nn8d595d65z0la-flatbuffers-25.1.24",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/93n0wr1r1d247rn4n6nn8d595d65z0la-flatbuffers-25.1.24"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/i4398a6fanqgrd82j9px7byzz39rkq9p-flatbuffers-25.1.24",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/i4398a6fanqgrd82j9px7byzz39rkq9p-flatbuffers-25.1.24"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/0vd9wk8ahgic9m9p9gkhm5b8qj5h2nvn-flatbuffers-25.1.24",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/0vd9wk8ahgic9m9p9gkhm5b8qj5h2nvn-flatbuffers-25.1.24"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/b2gss5v3s9p7i932c2si0kswr3ls3xzd-flatbuffers-25.1.24",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/b2gss5v3s9p7i932c2si0kswr3ls3xzd-flatbuffers-25.1.24"
+        }
+      }
+    },
     "github:NixOS/nixpkgs/nixpkgs-unstable": {
       "last_modified": "2025-04-23T03:04:08Z",
       "resolved": "github:NixOS/nixpkgs/507b63021ada5fee621b6ca371c4fca9ca46f52c?lastModified=1745377448&narHash=sha256-jhZDfXVKdD7TSEGgzFJQvEEZ2K65UMiqW5YJ2aIqxMA%3D"

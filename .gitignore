@@ -34,3 +34,5 @@ node_modules/
 
 **/*.so
 **/*.dylib
+
+**/qst_generated.rs
