@@ -12,32 +12,16 @@ defmodule GraSQL.Native do
   The Rust implementation offers significant performance advantages for
   computationally intensive tasks like query parsing and SQL generation.
 
+  Configuration for the native implementation is automatically loaded
+  when the NIF is initialized using `GraSQL.Config.load/0`.
+
   Note: This module should not be used directly. Instead, use the higher-level
   functions in the `GraSQL` module, which provide proper validation and error handling.
   """
-  use Rustler, otp_app: :grasql, crate: :grasql
-
-  @doc """
-  Initializes the native components with the provided configuration.
-
-  This function must be called before using any other functions in this module.
-  It sets up the internal state and configuration for the Rust NIF.
-
-  ## Parameters
-
-    * `config` - A validated configuration map (from `GraSQL.Config.to_native_config/1`)
-
-  ## Returns
-
-    * `:ok` - If initialization is successful
-    * `{:error, reason}` - If initialization fails
-
-  ## Error reasons
-
-    * `"invalid_config"` - The provided configuration is invalid
-    * `"init_failed"` - Native initialization failed for another reason
-  """
-  def init(config), do: do_init(config)
+  use Rustler,
+    otp_app: :grasql,
+    crate: :grasql,
+    load_data_fun: {GraSQL.Config, :load}
 
   @doc """
   Parses a GraphQL query string and returns the query ID.
@@ -95,10 +79,6 @@ defmodule GraSQL.Native do
   def generate_sql(query_id, variables \\ %{}), do: do_generate_sql(query_id, variables)
 
   # These functions are implemented natively in Rust
-
-  @doc false
-  def do_init(_config), do: :erlang.nif_error(:nif_not_loaded)
-
   @doc false
   def do_parse_query(_query), do: :erlang.nif_error(:nif_not_loaded)
 

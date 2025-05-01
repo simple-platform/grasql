@@ -20,8 +20,30 @@ pub use config::Config;
 pub use types::{GraphQLOperationKind, ParsedQueryInfo};
 
 // Module initialization
-fn load(_env: rustler::Env, _info: rustler::Term) -> bool {
-    true
+fn load(_env: rustler::Env, opts: rustler::Term) -> bool {
+    let result: Result<Config, rustler::Error> = rustler::Decoder::decode(opts);
+    match result {
+        Ok(config) => {
+            // Store the configuration in the global state
+            match config::CONFIG.lock() {
+                Ok(mut cfg) => {
+                    *cfg = Some(config.clone());
+                    true // Initialization successful
+                }
+                Err(_) => {
+                    eprintln!("Failed to acquire config lock during initialization");
+                    false // Failed to lock CONFIG
+                }
+            }
+        }
+        Err(err) => {
+            eprintln!(
+                "Failed to decode configuration during initialization: {:?}",
+                err
+            );
+            false // Failed to decode configuration
+        }
+    }
 }
 
 // Register NIF functions

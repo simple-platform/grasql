@@ -9,7 +9,6 @@ defmodule GraSQL.Config do
   * Naming conventions for fields and parameters
   * Operator mappings between GraphQL and SQL
   * Cache settings for query optimization
-  * Join behavior for relationship handling
   * Performance limits to prevent resource exhaustion
 
   Use this module to customize GraSQL's behavior to match your application's needs.
@@ -39,18 +38,14 @@ defmodule GraSQL.Config do
 
   ### Naming conventions
   * `aggregate_field_suffix` - Suffix for aggregate field names in GraphQL
-  * `single_query_param_name` - Parameter name for single entity queries
+  * `primary_key_argument_name` - Parameter name for single entity queries
 
   ### Operator mappings
   * `operators` - Map of GraphQL operator suffixes for each operator type
 
   ### Cache settings
-  * `max_cache_size` - Maximum number of entries in the query cache
-  * `cache_ttl` - Time-to-live for cache entries in seconds
-
-  ### Join settings
-  * `default_join_type` - Default join type (`:inner` or `:left_outer`)
-  * `skip_join_table` - Whether to skip intermediate join tables when possible
+  * `query_cache_max_size` - Maximum number of entries in the query cache
+  * `query_cache_ttl_seconds` - Time-to-live for cache entries in seconds
 
   ### Performance settings
   * `max_query_depth` - Maximum allowed depth for GraphQL queries
@@ -58,27 +53,26 @@ defmodule GraSQL.Config do
   @type t :: %__MODULE__{
           # Naming conventions
           aggregate_field_suffix: String.t(),
-          single_query_param_name: String.t(),
+          primary_key_argument_name: String.t(),
 
           # Operator mappings
           operators: %{operator => String.t()},
 
           # Cache settings
-          max_cache_size: non_neg_integer(),
-          cache_ttl: non_neg_integer(),
-
-          # Join settings
-          default_join_type: :inner | :left_outer,
-          skip_join_table: boolean(),
+          query_cache_max_size: non_neg_integer(),
+          query_cache_ttl_seconds: non_neg_integer(),
 
           # Performance settings
-          max_query_depth: non_neg_integer()
+          max_query_depth: non_neg_integer(),
+
+          # Schema resolver
+          schema_resolver: module()
         }
 
   defstruct [
     # Naming conventions
     aggregate_field_suffix: "_agg",
-    single_query_param_name: "id",
+    primary_key_argument_name: "id",
 
     # Operator mappings - using standard GraphQL operator syntax
     operators: %{
@@ -96,15 +90,14 @@ defmodule GraSQL.Config do
     },
 
     # Cache settings
-    max_cache_size: 1000,
-    cache_ttl: 3600,
-
-    # Join settings
-    default_join_type: :left_outer,
-    skip_join_table: true,
+    query_cache_max_size: 1000,
+    query_cache_ttl_seconds: 3600,
 
     # Performance settings
-    max_query_depth: 10
+    max_query_depth: 10,
+
+    # Schema resolver - default to SimpleResolver
+    schema_resolver: GraSQL.SimpleResolver
   ]
 
   @doc """
@@ -124,14 +117,11 @@ defmodule GraSQL.Config do
 
   ## Examples
 
-      iex> GraSQL.Config.validate(%GraSQL.Config{})
-      {:ok, %GraSQL.Config{}}
+      iex> GraSQL.Config.validate(%GraSQL.Config{schema_resolver: GraSQL.SimpleResolver})
+      {:ok, %GraSQL.Config{schema_resolver: GraSQL.SimpleResolver}}
 
-      iex> GraSQL.Config.validate(%GraSQL.Config{max_cache_size: -1})
+      iex> GraSQL.Config.validate(%GraSQL.Config{query_cache_max_size: -1, schema_resolver: GraSQL.SimpleResolver})
       {:error, "Cache settings must be non-negative integers"}
-
-      iex> GraSQL.Config.validate(%GraSQL.Config{default_join_type: :full})
-      {:error, "Join settings are invalid"}
   """
   @spec validate(t()) :: {:ok, t()} | {:error, String.t()}
   def validate(%__MODULE__{} = config) do
@@ -139,8 +129,8 @@ defmodule GraSQL.Config do
       &validate_naming_conventions/1,
       &validate_operators/1,
       &validate_cache_settings/1,
-      &validate_join_settings/1,
-      &validate_performance_settings/1
+      &validate_performance_settings/1,
+      &validate_schema_resolver/1
     ]
 
     Enum.reduce_while(validators, {:ok, config}, fn validator, {:ok, config} ->
@@ -149,6 +139,52 @@ defmodule GraSQL.Config do
         {:error, reason} -> {:halt, {:error, reason}}
       end
     end)
+  end
+
+  @doc """
+  Loads configuration from application environment and validates it.
+
+  This function centralizes the loading and validation of GraSQL configuration.
+  It should be called only once during application startup.
+
+  ## Returns
+
+    * `{:ok, config}` - If loading and validation are successful
+    * `{:error, reason}` - If validation fails, with a descriptive error message
+
+  ## Examples
+
+      iex> Application.put_env(:grasql, :max_query_depth, 20)
+      iex> {:ok, config} = GraSQL.Config.load_and_validate()
+      iex> config.max_query_depth
+      20
+  """
+  @spec load_and_validate() :: {:ok, t()} | {:error, String.t()}
+  def load_and_validate do
+    # Get all application config
+    app_config = Application.get_all_env(:grasql)
+
+    # Only include fields that exist in Config struct to avoid errors
+    config_fields = __struct__() |> Map.keys() |> Enum.filter(&(&1 != :__struct__))
+
+    # Filter app_config to only include valid config fields
+    valid_config =
+      app_config
+      |> Enum.filter(fn {key, _} -> key in config_fields end)
+      |> Enum.into(%{})
+
+    # Ensure schema_resolver is included if set in application environment
+    valid_config =
+      case valid_config[:schema_resolver] || app_config[:schema_resolver] do
+        nil -> valid_config
+        resolver -> Map.put(valid_config, :schema_resolver, resolver)
+      end
+
+    # Create config struct with application settings
+    config = struct(__MODULE__, valid_config)
+
+    # Validate the config
+    validate(config)
   end
 
   @doc """
@@ -172,20 +208,53 @@ defmodule GraSQL.Config do
       iex> native_config.operators
       %{"eq" => "_eq", "gt" => "_gt"}
   """
-  @spec to_native_config(t()) :: t()
+  @spec to_native_config(t()) :: map()
   def to_native_config(%__MODULE__{} = config) do
     # Convert atom keys to strings for Rust compatibility
     string_operators = for {k, v} <- config.operators, into: %{}, do: {Atom.to_string(k), v}
 
-    # Return a new config map with the string operators
-    %{config | operators: string_operators}
+    # Convert the entire struct to a plain map
+    config
+    |> Map.from_struct()
+    |> Map.put(:operators, string_operators)
+  end
+
+  @doc """
+  Generates configuration data for NIF loading.
+
+  This function is called by Rustler when the NIF is loaded and provides
+  the configuration for the native code. It loads and validates the configuration
+  from the application environment and converts it to the native format.
+
+  ## Returns
+
+    * The validated configuration in native format
+
+  ## Examples
+
+      iex> is_map(GraSQL.Config.load())
+      true
+  """
+  @spec load() :: map()
+  def load do
+    case load_and_validate() do
+      {:ok, valid_config} ->
+        # Store the validated config in application env for later retrieval
+        Application.put_env(:grasql, :__config__, valid_config)
+
+        # Convert config for Rust NIF
+        to_native_config(valid_config)
+
+      {:error, reason} ->
+        raise "Failed to generate configuration for GraSQL: #{reason}"
+    end
   end
 
   # Private validation functions
 
   defp validate_naming_conventions(config) do
     if is_binary(config.aggregate_field_suffix) and
-         is_binary(config.single_query_param_name) do
+         is_binary(config.primary_key_argument_name) do
       :ok
     else
       {:error, "Naming convention fields must be strings"}
@@ -204,20 +273,11 @@ defmodule GraSQL.Config do
   end
 
   defp validate_cache_settings(config) do
-    if is_integer(config.max_cache_size) and config.max_cache_size > 0 and
-         is_integer(config.cache_ttl) and config.cache_ttl >= 0 do
+    if is_integer(config.query_cache_max_size) and config.query_cache_max_size > 0 and
+         is_integer(config.query_cache_ttl_seconds) and config.query_cache_ttl_seconds >= 0 do
       :ok
     else
       {:error, "Cache settings must be non-negative integers"}
-    end
-  end
-
-  defp validate_join_settings(config) do
-    if config.default_join_type in [:inner, :left_outer] and
-         is_boolean(config.skip_join_table) do
-      :ok
-    else
-      {:error, "Join settings are invalid"}
     end
   end
 
@@ -227,5 +287,36 @@ defmodule GraSQL.Config do
     else
       {:error, "Performance settings must be positive integers"}
     end
+  end
+
+  defp validate_schema_resolver(config) do
+    # Use SimpleResolver as default if none is configured
+    resolver = config.schema_resolver || GraSQL.SimpleResolver
+
+    cond do
+      # Ensure the resolver module is loaded
+      not Code.ensure_loaded?(resolver) ->
+        {:error, "Schema resolver module #{inspect(resolver)} could not be loaded"}
+
+      # Check that all required functions are implemented
+      not functions_implemented?(resolver) ->
+        {:error, "Schema resolver module must implement required methods"}
+
+      # All checks passed
+      true ->
+        :ok
+    end
+  end
+
+  defp functions_implemented?(module) do
+    required_functions = [
+      {:resolve_table, 2},
+      {:resolve_relationship, 2}
+    ]
+
+    Enum.all?(
+      required_functions,
+      &function_exported?(module, elem(&1, 0), elem(&1, 1))
+    )
   end
 end

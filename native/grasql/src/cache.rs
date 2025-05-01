@@ -13,7 +13,7 @@ fn create_cache_from_config() -> Cache<String, ParsedQueryInfo> {
         .unwrap_or_else(|_| panic!("CONFIG lock poisoned"));
 
     let (max_size, ttl) = match &*config_guard {
-        Some(cfg) => (cfg.max_cache_size as u64, cfg.cache_ttl),
+        Some(cfg) => (cfg.query_cache_max_size as u64, cfg.query_cache_ttl_seconds),
         None => (1000, 3600), // Default values if CONFIG not initialized yet
     };
 

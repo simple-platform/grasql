@@ -4,36 +4,18 @@
 /// These functions are the bridge between Elixir and the Rust implementation of GraSQL.
 use crate::atoms;
 use crate::cache::{add_to_cache, generate_query_id, get_from_cache};
-use crate::config::{Config, CONFIG};
+use crate::config::CONFIG;
 use crate::parser::parse_graphql;
 use crate::sql::generate_sql;
 use crate::types::GraphQLOperationKind;
 
 use rustler::{Encoder, Env, Error, Term};
 
-/// Initialize the GraSQL engine with the provided configuration
-///
-/// This function is called from Elixir to initialize GraSQL with a configuration struct.
-/// It stores the configuration in a global state for use by other functions.
-#[rustler::nif(name = "do_init")]
-pub fn do_init(env: Env<'_>, config: Config) -> rustler::NifResult<Term<'_>> {
-    // Store the configuration in the global state
-    match CONFIG.lock() {
-        Ok(mut cfg) => {
-            *cfg = Some(config.clone());
-
-            // The cache will use this config when it's first accessed
-            Ok((atoms::ok()).encode(env))
-        }
-        Err(_) => Err(Error::Term(Box::new("Failed to acquire config lock"))),
-    }
-}
-
 /// Parse a GraphQL query string
 ///
 /// This function parses a GraphQL query string and returns information about the
 /// operation kind, name, and a unique query ID that can be used for SQL generation.
-#[rustler::nif(name = "do_parse_query")]
+#[rustler::nif]
 pub fn do_parse_query(env: Env<'_>, query: String) -> rustler::NifResult<Term<'_>> {
     // Get the current configuration
     let _config = match CONFIG.lock() {
@@ -97,7 +79,7 @@ pub fn do_parse_query(env: Env<'_>, query: String) -> rustler::NifResult<Term<'_
 /// This function generates SQL from a previously parsed GraphQL query,
 /// identified by its query ID. It also takes variables that can be used
 /// in the query.
-#[rustler::nif(name = "do_generate_sql")]
+#[rustler::nif]
 pub fn do_generate_sql<'a>(
     env: Env<'a>,
     query_id: String,

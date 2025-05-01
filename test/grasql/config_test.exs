@@ -12,21 +12,18 @@ defmodule GraSQL.ConfigTest do
     end
 
     test "rejects negative cache settings" do
-      config = %Config{max_cache_size: -1}
+      config = %Config{query_cache_max_size: -1}
       assert {:error, "Cache settings must be non-negative integers"} = Config.validate(config)
     end
 
     test "rejects invalid operator map" do
-      config = %Config{operators: %{"invalid" => "no_underscore"}}
+      config = %Config{
+        operators: %{"invalid" => "no_underscore"}
+      }
 
       assert {:error,
               "Operators must be a map with atom keys and string values starting with '_'"} =
                Config.validate(config)
-    end
-
-    test "rejects invalid join type" do
-      config = %Config{default_join_type: :invalid}
-      assert {:error, "Join settings are invalid"} = Config.validate(config)
     end
 
     test "rejects invalid naming conventions" do
@@ -42,11 +39,15 @@ defmodule GraSQL.ConfigTest do
     test "validates naming conventions" do
       # Test with invalid aggregate_field_suffix
       assert {:error, "Naming convention fields must be strings"} =
-               Config.validate(%Config{aggregate_field_suffix: nil})
+               Config.validate(%Config{
+                 aggregate_field_suffix: nil
+               })
 
-      # Test with invalid single_query_param_name
+      # Test with invalid primary_key_argument_name
       assert {:error, "Naming convention fields must be strings"} =
-               Config.validate(%Config{single_query_param_name: nil})
+               Config.validate(%Config{
+                 primary_key_argument_name: nil
+               })
     end
 
     test "validates operators" do
@@ -68,7 +69,9 @@ defmodule GraSQL.ConfigTest do
       # Test with invalid operators keys
       assert {:error,
               "Operators must be a map with atom keys and string values starting with '_'"} =
-               Config.validate(%Config{operators: %{123 => "_eq"}})
+               Config.validate(%Config{
+                 operators: %{123 => "_eq"}
+               })
 
       # Test with empty operators map (valid)
       assert {:ok, _} = Config.validate(%Config{operators: %{}})
@@ -80,7 +83,10 @@ defmodule GraSQL.ConfigTest do
         lt: "_lt"
       }
 
-      assert {:ok, _} = Config.validate(%Config{operators: valid_operators})
+      assert {:ok, _} =
+               Config.validate(%Config{
+                 operators: valid_operators
+               })
 
       # Test with custom operator values
       custom_operators = %{
@@ -88,52 +94,44 @@ defmodule GraSQL.ConfigTest do
         in: "_contains"
       }
 
-      assert {:ok, _} = Config.validate(%Config{operators: custom_operators})
+      assert {:ok, _} =
+               Config.validate(%Config{
+                 operators: custom_operators
+               })
     end
 
     test "validates cache settings" do
-      # Test with invalid max_cache_size
+      # Test with invalid query_cache_max_size
       assert {:error, "Cache settings must be non-negative integers"} =
-               Config.validate(%Config{max_cache_size: 0})
+               Config.validate(%Config{query_cache_max_size: 0})
 
       assert {:error, "Cache settings must be non-negative integers"} =
-               Config.validate(%Config{max_cache_size: "1000"})
+               Config.validate(%Config{
+                 query_cache_max_size: "1000"
+               })
 
-      # Test with invalid cache_ttl
+      # Test with invalid query_cache_ttl_seconds
       assert {:error, "Cache settings must be non-negative integers"} =
-               Config.validate(%Config{cache_ttl: -1})
+               Config.validate(%Config{
+                 query_cache_ttl_seconds: -1
+               })
 
       assert {:error, "Cache settings must be non-negative integers"} =
-               Config.validate(%Config{cache_ttl: "3600"})
+               Config.validate(%Config{
+                 query_cache_ttl_seconds: "3600"
+               })
 
       # Test with valid cache settings
       assert {:ok, _} =
-               Config.validate(%Config{max_cache_size: 500, cache_ttl: 1800})
-
-      # Zero TTL is allowed (no expiration)
-      assert {:ok, _} = Config.validate(%Config{cache_ttl: 0})
-    end
-
-    test "validates join settings" do
-      # Test with invalid default_join_type
-      assert {:error, "Join settings are invalid"} =
-               Config.validate(%Config{default_join_type: :invalid})
-
-      # Test with invalid skip_join_table
-      assert {:error, "Join settings are invalid"} =
-               Config.validate(%Config{skip_join_table: nil})
-
-      # Test with valid join settings
-      assert {:ok, _} =
                Config.validate(%Config{
-                 default_join_type: :inner,
-                 skip_join_table: false
+                 query_cache_max_size: 500,
+                 query_cache_ttl_seconds: 1800
                })
 
+      # Zero TTL is allowed (no expiration)
       assert {:ok, _} =
                Config.validate(%Config{
-                 default_join_type: :left_outer,
-                 skip_join_table: true
+                 query_cache_ttl_seconds: 0
                })
     end
 
@@ -146,7 +144,8 @@ defmodule GraSQL.ConfigTest do
                Config.validate(%Config{max_query_depth: "10"})
 
       # Test with valid max_query_depth
-      assert {:ok, _} = Config.validate(%Config{max_query_depth: 5})
+      assert {:ok, _} =
+               Config.validate(%Config{max_query_depth: 5})
     end
   end
 
@@ -169,16 +168,14 @@ defmodule GraSQL.ConfigTest do
 
     test "preserves other configuration values" do
       config = %Config{
-        max_cache_size: 2000,
-        cache_ttl: 7200,
-        default_join_type: :inner
+        query_cache_max_size: 2000,
+        query_cache_ttl_seconds: 7200
       }
 
       native_config = Config.to_native_config(config)
 
-      assert native_config.max_cache_size == 2000
-      assert native_config.cache_ttl == 7200
-      assert native_config.default_join_type == :inner
+      assert native_config.query_cache_max_size == 2000
+      assert native_config.query_cache_ttl_seconds == 7200
     end
   end
 end

@@ -24,7 +24,7 @@ GraSQL automatically initializes at application startup through the GraSQL.Appli
 
 ```elixir
 config :grasql,
-  max_cache_size: 2000,
+  query_cache_max_size: 2000,
   max_query_depth: 15,
   aggregate_field_suffix: "_agg"
 ```

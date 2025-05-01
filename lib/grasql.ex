@@ -12,7 +12,7 @@ defmodule GraSQL do
   ## Basic Usage
 
   ```elixir
-  # GraSQL is automatically initialized at application startup
+  # GraSQL is automatically initialized during NIF loading
 
   # Define a resolver for your database schema
   defmodule MyApp.SchemaResolver do
@@ -22,11 +22,15 @@ defmodule GraSQL do
     def resolve_relationship(rel, _ctx), do: rel
   end
 
+  # Configure the resolver in your config.exs
+  config :grasql,
+    schema_resolver: MyApp.SchemaResolver
+
   # Convert a GraphQL query to SQL
   query = "query { users { id name posts { title } } }"
   variables = %{"limit" => 10}
 
-  {:ok, sql, params} = GraSQL.generate_sql(query, variables, MyApp.SchemaResolver)
+  {:ok, sql, params} = GraSQL.generate_sql(query, variables)
 
   # Execute the SQL with your database library
   MyApp.Repo.query(sql, params)
@@ -38,8 +42,9 @@ defmodule GraSQL do
 
   ```elixir
   config :grasql,
-    max_cache_size: 2000,
-    max_query_depth: 15
+    query_cache_max_size: 2000,
+    max_query_depth: 15,
+    schema_resolver: MyApp.SchemaResolver
   ```
 
   See `GraSQL.Config` module for all available configuration options.
@@ -51,7 +56,7 @@ defmodule GraSQL do
   Parse a GraphQL query string.
 
   This function validates the GraphQL syntax and returns metadata about the query.
-  The returned query_id is used in subsequent calls to generate_sql/5.
+  The returned query_id is used in subsequent calls to generate_sql/3.
 
   ## Parameters
 
@@ -101,14 +106,13 @@ defmodule GraSQL do
   @doc """
   Generate SQL from a GraphQL query.
 
-  This function takes a GraphQL query, variables, and a schema resolver,
-  and generates the corresponding SQL query with parameterized values.
+  This function takes a GraphQL query and variables, and generates the corresponding SQL query
+  with parameterized values using the configured resolver.
 
   ## Parameters
 
     * `query` - The GraphQL query string
     * `variables` - A map of GraphQL variables used in the query
-    * `resolver` - A module implementing the `GraSQL.SchemaResolver` behaviour
     * `ctx` - Context map passed to resolver functions (default: `%{}`)
     * `options` - Additional options for SQL generation (default: `%{}`)
 
@@ -125,25 +129,28 @@ defmodule GraSQL do
       # Generate SQL for a simple query
       iex> query = "query { users { id name } }"
       iex> {:ok, _query_id, _kind, _name} = GraSQL.parse_query(query)
-      iex> match?({:ok, _, _}, GraSQL.generate_sql(query, %{}, GraSQL.SimpleResolver))
+      iex> match?({:ok, _, _}, GraSQL.generate_sql(query, %{}))
       true
 
       # Using variables
       iex> query = "query($id: ID!) { user(id: $id) { name } }"
-      iex> result = GraSQL.generate_sql(query, %{"id" => 123}, GraSQL.SimpleResolver)
+      iex> result = GraSQL.generate_sql(query, %{"id" => 123})
       iex> match?({:ok, _, _}, result)
       true
 
       # Error handling
-      iex> result = GraSQL.generate_sql("invalid", %{}, GraSQL.SimpleResolver)
+      iex> result = GraSQL.generate_sql("invalid", %{})
       iex> match?({:error, _}, result)
       true
   """
-  @spec generate_sql(String.t(), map(), module(), map(), map()) ::
+  @spec generate_sql(String.t(), map(), map(), map()) ::
           {:ok, String.t(), list()} | {:error, String.t()}
-  def generate_sql(query, variables, resolver, _ctx \\ %{}, _options \\ %{}) do
-    with :ok <- validate_resolver(resolver),
-         {:ok, query_id, _, _} <- parse_query(query) do
+  def generate_sql(query, variables, _ctx \\ %{}, _options \\ %{}) do
+    # Get the pre-validated config from application environment
+    _config = get_current_config()
+
+    # All validation is now done during application startup or Config.reload_with_resolver
+    with {:ok, query_id, _, _} <- parse_query(query) do
       # This would normally call resolve_tables and resolve_relationships
       # before generating SQL, but that's for future implementation
       case Native.generate_sql(query_id, variables) do
@@ -164,15 +171,10 @@ defmodule GraSQL do
 
   # Private helpers
 
-  defp validate_resolver(resolver) do
-    required_functions = [
-      {:resolve_table, 2},
-      {:resolve_relationship, 2}
-    ]
-
-    case Enum.all?(required_functions, &function_exported?(resolver, elem(&1, 0), elem(&1, 1))) do
-      true -> :ok
-      false -> {:error, "Resolver module must implement required methods"}
-    end
+  defp get_current_config do
+    # Get the validated configuration struct that was stored during application startup
+    # or explicitly loaded via Config.reload_with_resolver
+    Application.get_env(:grasql, :__config__) ||
+      raise "GraSQL configuration not found. Application may not have been properly initialized."
   end
 end

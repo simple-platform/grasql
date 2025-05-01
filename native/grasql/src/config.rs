@@ -2,9 +2,9 @@
 ///
 /// This module defines the configuration structure and globals needed for the
 /// GraSQL engine, handling settings related to naming conventions, operators,
-/// caching, joins, and performance parameters.
+/// caching, and performance parameters.
 use once_cell::sync::Lazy;
-use rustler::{Atom, NifMap};
+use rustler::NifMap;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -14,23 +14,17 @@ pub struct Config {
     /// Field name suffix for aggregate operations
     pub aggregate_field_suffix: String,
 
-    /// Parameter name used for single record queries
-    pub single_query_param_name: String,
+    /// Argument name used for primary key in single record queries
+    pub primary_key_argument_name: String,
 
     /// Operator mappings from GraphQL to SQL
     pub operators: HashMap<String, String>,
 
     /// Maximum number of parsed queries to store in cache
-    pub max_cache_size: usize,
+    pub query_cache_max_size: usize,
 
     /// Time-to-live for cached queries in seconds
-    pub cache_ttl: u64,
-
-    /// Default join type for relationships
-    pub default_join_type: Atom,
-
-    /// Whether to skip join tables in many-to-many relationships
-    pub skip_join_table: bool,
+    pub query_cache_ttl_seconds: u64,
 
     /// Maximum allowed depth for nested GraphQL queries
     pub max_query_depth: usize,
