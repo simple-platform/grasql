@@ -6,14 +6,11 @@ use std::time::Duration;
 use xxhash_rust::xxh3::xxh3_64;
 
 /// Global cache for parsed GraphQL queries with automatic LRU eviction and TTL
-pub static QUERY_CACHE: Lazy<RwLock<Cache<String, ParsedQueryInfo>>> = Lazy::new(|| {
-    // Start with a small default cache that will be replaced when init_cache is called
-    RwLock::new(
-        Cache::builder()
-            .max_capacity(100)
-            .time_to_live(Duration::from_secs(60))
-            .build(),
-    )
+pub static QUERY_CACHE: Lazy<Cache<String, ParsedQueryInfo>> = Lazy::new(|| {
+    Cache::builder()
+        .max_capacity(100)
+        .time_to_live(Duration::from_secs(60))
+        .build()
 });
 
 /// Initialize the cache with the specified capacity and TTL
