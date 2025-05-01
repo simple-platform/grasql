@@ -46,5 +46,5 @@ pub fn add_to_cache(query_id: &str, parsed_query_info: ParsedQueryInfo) {
 
 /// Get a parsed query from the cache
 pub fn get_from_cache(query_id: &str) -> Option<ParsedQueryInfo> {
-    QUERY_CACHE.get(query_id).map(|v| v.clone())
+    QUERY_CACHE.get(query_id).cloned()
 }
