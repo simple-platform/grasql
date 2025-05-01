@@ -3,7 +3,7 @@
 /// This module provides the NIFs (Native Implemented Functions) that are exposed to Elixir.
 /// These functions are the bridge between Elixir and the Rust implementation of GraSQL.
 use crate::atoms;
-use crate::cache::{add_to_cache, generate_query_id, get_from_cache, init_cache};
+use crate::cache::{add_to_cache, generate_query_id, get_from_cache};
 use crate::config::{Config, CONFIG};
 use crate::parser::parse_graphql;
 use crate::sql::generate_sql;
@@ -22,9 +22,7 @@ pub fn do_init(env: Env<'_>, config: Config) -> rustler::NifResult<Term<'_>> {
         Ok(mut cfg) => {
             *cfg = Some(config.clone());
 
-            // Initialize the cache with the config values
-            init_cache(config.max_cache_size, config.cache_ttl);
-
+            // The cache will use this config when it's first accessed
             Ok((atoms::ok()).encode(env))
         }
         Err(_) => Err(Error::Term(Box::new("Failed to acquire config lock"))),

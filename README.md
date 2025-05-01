@@ -54,6 +54,24 @@ Then run:
 mix deps.get
 ```
 
+## Configuration
+
+GraSQL is automatically initialized at application startup and can be configured through application environment variables in your config files:
+
+```elixir
+# In config/config.exs
+config :grasql,
+  max_cache_size: 2000,
+  max_query_depth: 15,
+  aggregate_field_suffix: "_agg",
+  operators: %{
+    eq: "_equals",
+    gt: "_greater_than"
+  }
+```
+
+See `GraSQL.Config` module documentation for all available configuration options.
+
 ## Usage
 
 ### 1. Define a Schema Resolver

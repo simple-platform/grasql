@@ -20,12 +20,23 @@ These components work together in a pipeline to transform GraphQL queries into h
 
 ### Initialization
 
-When initializing GraSQL, users can configure global options such as:
+GraSQL automatically initializes at application startup through the GraSQL.Application module. Users can configure GraSQL through application environment variables in their config.exs file:
+
+```elixir
+config :grasql,
+  max_cache_size: 2000,
+  max_query_depth: 15,
+  aggregate_field_suffix: "_agg"
+```
+
+Configuration options include:
 
 - How to identify aggregate fields in GraphQL queries (e.g., fields ending with \_agg)
 - How to identify single vs. many select/mutation operations
 - Operator mappings (e.g., \_eq for =, \_gt for >, etc.)
 - Join table handling preferences for many-to-many relationships
+
+The application loads these settings during startup and initializes the GraSQL engine with the specified configuration.
 
 ### Processing Phases
 
