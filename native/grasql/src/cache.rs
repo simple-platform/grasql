@@ -8,9 +8,14 @@ use xxhash_rust::xxh3::xxh3_64;
 /// Create a cache based on the current configuration
 fn create_cache_from_config() -> Cache<String, ParsedQueryInfo> {
     // Get current configuration or use defaults if not initialized
-    let config_guard = CONFIG
-        .lock()
-        .unwrap_or_else(|_| panic!("CONFIG lock poisoned"));
+    let config_guard = match CONFIG.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            // Log the error
+            eprintln!("WARNING: CONFIG lock poisoned, using recovered lock");
+            poisoned.into_inner()
+        }
+    };
 
     let (max_size, ttl) = match &*config_guard {
         Some(cfg) => (cfg.query_cache_max_size as u64, cfg.query_cache_ttl_seconds),
