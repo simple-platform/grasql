@@ -64,6 +64,7 @@
     "messagepack",
     "moduledoc",
     "moduletag",
+    "moka",
     "nanos",
     "nilike",
     "niregex",

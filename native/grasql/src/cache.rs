@@ -1,16 +1,32 @@
-/// Cache management module for GraSQL
-///
-/// This module provides functionality for caching parsed GraphQL queries
-/// to improve performance for repeated queries. It includes utilities for
-/// generating query IDs, storing query information, and cleaning expired entries.
-use crate::types::{CacheEntry, ParsedQueryInfo};
-use dashmap::DashMap;
+use crate::types::ParsedQueryInfo;
+use moka::sync::Cache;
 use once_cell::sync::Lazy;
-use std::time::SystemTime;
+use std::sync::RwLock;
+use std::time::Duration;
 use xxhash_rust::xxh3::xxh3_64;
 
-/// Global cache for parsed GraphQL queries
-pub static QUERY_CACHE: Lazy<DashMap<String, CacheEntry>> = Lazy::new(DashMap::new);
+/// Global cache for parsed GraphQL queries with automatic LRU eviction and TTL
+pub static QUERY_CACHE: Lazy<RwLock<Cache<String, ParsedQueryInfo>>> = Lazy::new(|| {
+    // Start with a small default cache that will be replaced when init_cache is called
+    RwLock::new(
+        Cache::builder()
+            .max_capacity(100)
+            .time_to_live(Duration::from_secs(60))
+            .build(),
+    )
+});
+
+/// Initialize the cache with the specified capacity and TTL
+pub fn init_cache(max_size: usize, ttl_seconds: u64) {
+    let new_cache = Cache::builder()
+        .max_capacity(max_size as u64)
+        .time_to_live(Duration::from_secs(ttl_seconds))
+        .build();
+
+    if let Ok(mut cache) = QUERY_CACHE.write() {
+        *cache = new_cache;
+    }
+}
 
 /// Converts query string to a unique query ID using xxHash algorithm
 ///
@@ -25,40 +41,15 @@ pub fn generate_query_id(query: &str) -> String {
 
 /// Add a parsed query to the cache
 pub fn add_to_cache(query_id: &str, parsed_query_info: ParsedQueryInfo) {
-    QUERY_CACHE.insert(
-        query_id.to_string(),
-        CacheEntry {
-            parsed_query_info,
-            timestamp: SystemTime::now(),
-        },
-    );
+    if let Ok(cache) = QUERY_CACHE.read() {
+        cache.insert(query_id.to_string(), parsed_query_info);
+    }
 }
 
-/// Clean up expired cache entries
-pub fn clean_cache(ttl: u64) {
-    let now = SystemTime::now();
-    QUERY_CACHE.retain(|_, entry| {
-        if let Ok(elapsed) = now.duration_since(entry.timestamp) {
-            elapsed.as_secs() < ttl
-        } else {
-            true
-        }
-    });
-}
-
-/// Evict the oldest entry from the cache
-pub fn evict_oldest_entry() {
-    let mut oldest_time = SystemTime::now();
-    let mut oldest_key = None;
-
-    for entry in QUERY_CACHE.iter() {
-        if entry.timestamp < oldest_time {
-            oldest_time = entry.timestamp;
-            oldest_key = Some(entry.key().clone());
-        }
+/// Get a parsed query from the cache
+pub fn get_from_cache(query_id: &str) -> Option<ParsedQueryInfo> {
+    if let Ok(cache) = QUERY_CACHE.read() {
+        return cache.get(query_id).map(|v| v.clone());
     }
-
-    if let Some(key) = oldest_key {
-        QUERY_CACHE.remove(&key);
-    }
+    None
 }

@@ -16,6 +16,7 @@ bumpalo = "3.14"
 dashmap = "6.1.0"
 once_cell = "1.17.1"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
+moka = { version = "0.12", features = ["sync"] }
 
 [dev-dependencies]
 criterion = "0.5.1"

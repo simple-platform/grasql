@@ -16,12 +16,6 @@ defmodule GraSQLTest do
     def resolve_table(_table, _ctx), do: %{}
   end
 
-  setup do
-    # Initialize GraSQL with default config before each test
-    GraSQL.init()
-    :ok
-  end
-
   describe "init/1" do
     test "initializes with default configuration" do
       assert :ok = GraSQL.init()

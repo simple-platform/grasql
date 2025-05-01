@@ -3,7 +3,6 @@
 /// This module defines the main data types used throughout the GraSQL codebase,
 /// including GraphQL operation types and parsed query information.
 use graphql_query::ast::OperationKind;
-use std::time::SystemTime;
 
 /// Enum to represent GraphQL operation kind
 #[derive(Clone, Debug)]
@@ -35,12 +34,4 @@ pub struct ParsedQueryInfo {
 
     /// Operation name if present
     pub operation_name: Option<String>,
-}
-
-/// Cache entry structure containing the parsed query info and timestamp
-pub struct CacheEntry {
-    /// The parsed query information
-    pub parsed_query_info: ParsedQueryInfo,
-    /// Timestamp when the entry was created or last accessed
-    pub timestamp: SystemTime,
 }
