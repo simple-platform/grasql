@@ -2,8 +2,6 @@ defmodule GraSQLTest do
   use ExUnit.Case
   doctest GraSQL
 
-  alias GraSQL.Config
-
   # Define a simple resolver for testing
   defmodule TestResolver do
     @behaviour GraSQL.SchemaResolver
@@ -16,34 +14,7 @@ defmodule GraSQLTest do
     def resolve_table(_table, _ctx), do: %{}
   end
 
-  describe "init/1" do
-    test "initializes with default configuration" do
-      assert :ok = GraSQL.init()
-    end
-
-    test "initializes with custom configuration" do
-      custom_config = %Config{
-        aggregate_field_suffix: "_aggregate",
-        max_cache_size: 2000,
-        cache_ttl: 7200
-      }
-
-      assert :ok = GraSQL.init(custom_config)
-    end
-
-    test "returns error for invalid configuration" do
-      invalid_config = %Config{max_cache_size: -1}
-      assert {:error, _} = GraSQL.init(invalid_config)
-    end
-  end
-
   describe "parse_query/1" do
-    setup do
-      # Initialize with default config
-      assert :ok = GraSQL.init()
-      :ok
-    end
-
     test "parses a valid query" do
       query = "query { users { id name email } }"
       assert {:ok, _query_id, :query, ""} = GraSQL.parse_query(query)
@@ -56,12 +27,6 @@ defmodule GraSQLTest do
   end
 
   describe "generate_sql/5" do
-    setup do
-      # Initialize with default config
-      assert :ok = GraSQL.init()
-      :ok
-    end
-
     defmodule ValidResolver do
       @behaviour GraSQL.SchemaResolver
       def resolve_table(table, _ctx), do: table

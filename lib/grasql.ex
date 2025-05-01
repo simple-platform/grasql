@@ -5,7 +5,6 @@ defmodule GraSQL do
   This module provides the main interface for converting GraphQL queries to SQL.
   It handles:
 
-  * Initialization of the transpiler engine
   * Parsing of GraphQL queries
   * Generation of SQL queries with parameterized values
   * Integration with schema resolvers for database metadata
@@ -13,8 +12,7 @@ defmodule GraSQL do
   ## Basic Usage
 
   ```elixir
-  # Initialize GraSQL (typically done at application startup)
-  :ok = GraSQL.init()
+  # GraSQL is automatically initialized at application startup
 
   # Define a resolver for your database schema
   defmodule MyApp.SchemaResolver do
@@ -33,53 +31,21 @@ defmodule GraSQL do
   # Execute the SQL with your database library
   MyApp.Repo.query(sql, params)
   ```
+
+  ## Configuration
+
+  GraSQL is configured through application environment variables in your config.exs:
+
+  ```elixir
+  config :grasql,
+    max_cache_size: 2000,
+    max_query_depth: 15
+  ```
+
+  See `GraSQL.Config` module for all available configuration options.
   """
 
-  alias GraSQL.Config
   alias GraSQL.Native
-
-  @doc """
-  Initialize the GraSQL engine.
-
-  This function must be called before using any other functions in this module.
-  It sets up the internal state, configuration, and caching for the transpiler.
-
-  ## Parameters
-
-    * `config` - Optional configuration struct. If not provided, default settings are used.
-
-  ## Returns
-
-    * `:ok` - Initialization was successful
-    * `{:error, reason}` - Initialization failed
-
-  ## Examples
-
-      # Initialize with default configuration
-      iex> GraSQL.init()
-      :ok
-
-      # Initialize with custom configuration
-      iex> config = %GraSQL.Config{max_cache_size: 2000, max_query_depth: 15}
-      iex> GraSQL.init(config)
-      :ok
-
-      # Error handling
-      iex> GraSQL.init(%GraSQL.Config{max_cache_size: -1})
-      {:error, "Cache settings must be non-negative integers"}
-  """
-  @spec init(Config.t() | nil) :: :ok | {:error, String.t()}
-  def init(config \\ %Config{}) do
-    case Config.validate(config) do
-      {:ok, valid_config} ->
-        # Convert config for Rust NIF
-        native_config = Config.to_native_config(valid_config)
-        Native.init(native_config)
-
-      {:error, _} = error ->
-        error
-    end
-  end
 
   @doc """
   Parse a GraphQL query string.
@@ -103,8 +69,6 @@ defmodule GraSQL do
   ## Examples
 
       # Parse a simple unnamed query
-      iex> GraSQL.init()
-      :ok
       iex> {:ok, _id, kind, name} = GraSQL.parse_query("query { users { id } }")
       iex> {kind, name}
       {:query, ""}
@@ -159,24 +123,18 @@ defmodule GraSQL do
   ## Examples
 
       # Generate SQL for a simple query
-      iex> GraSQL.init()
-      :ok
       iex> query = "query { users { id name } }"
       iex> {:ok, _query_id, _kind, _name} = GraSQL.parse_query(query)
       iex> match?({:ok, _, _}, GraSQL.generate_sql(query, %{}, GraSQL.SimpleResolver))
       true
 
       # Using variables
-      iex> GraSQL.init()
-      :ok
       iex> query = "query($id: ID!) { user(id: $id) { name } }"
       iex> result = GraSQL.generate_sql(query, %{"id" => 123}, GraSQL.SimpleResolver)
       iex> match?({:ok, _, _}, result)
       true
 
       # Error handling
-      iex> GraSQL.init()
-      :ok
       iex> result = GraSQL.generate_sql("invalid", %{}, GraSQL.SimpleResolver)
       iex> match?({:error, _}, result)
       true
