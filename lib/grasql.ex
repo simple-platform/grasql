@@ -1,127 +1,180 @@
 defmodule GraSQL do
   @moduledoc """
-  GraSQL provides a bridge between GraphQL and SQL databases.
+  GraSQL - GraphQL to SQL transpiler.
 
-  This library allows for efficient translation of GraphQL queries into optimized SQL,
-  with a focus on performance, memory efficiency, and developer-friendly interfaces.
+  This module provides the main interface for converting GraphQL queries to SQL.
+  It handles:
 
-  The core functionality includes:
-  - GraphQL query parsing and analysis
-  - Schema needs determination
-  - SQL generation with parameter handling
-  - Result mapping from SQL to GraphQL responses
+  * Parsing of GraphQL queries
+  * Generation of SQL queries with parameterized values
+  * Integration with schema resolvers for database metadata
+
+  ## Basic Usage
+
+  ```elixir
+  # GraSQL is automatically initialized during NIF loading
+
+  # Define a resolver for your database schema
+  defmodule MyApp.SchemaResolver do
+    @behaviour GraSQL.SchemaResolver
+
+    def resolve_table(table, _ctx), do: table
+    def resolve_relationship(rel, _ctx), do: rel
+  end
+
+  # Configure the resolver in your config.exs
+  config :grasql,
+    schema_resolver: MyApp.SchemaResolver
+
+  # Convert a GraphQL query to SQL
+  query = "query { users { id name posts { title } } }"
+  variables = %{"limit" => 10}
+
+  {:ok, sql, params} = GraSQL.generate_sql(query, variables)
+
+  # Execute the SQL with your database library
+  MyApp.Repo.query(sql, params)
+  ```
+
+  ## Configuration
+
+  GraSQL is configured through application environment variables in your config.exs:
+
+  ```elixir
+  config :grasql,
+    query_cache_max_size: 2000,
+    max_query_depth: 15,
+    schema_resolver: MyApp.SchemaResolver
+  ```
+
+  See `GraSQL.Config` module for all available configuration options.
   """
 
   alias GraSQL.Native
 
   @doc """
-  Generates SQL from a GraphQL query.
+  Parse a GraphQL query string.
 
-  This function provides a simplified API by combining both phases of the
-  SQL generation process into a single call:
-  1. Parse and analyze the GraphQL query (Phase 1)
-  2. Apply the resolver methods to enrich the analysis
-  3. Generate SQL from the enriched analysis (Phase 2)
-
-  The resolver must implement these methods:
-  - `resolve_tables/2`: Maps GraphQL types to database tables
-  - `resolve_relationships/2`: Defines relationships between tables
-  - `set_permissions/2`: Applies access control rules
-  - `set_overrides/2`: Provides custom overrides (only used for mutations)
+  This function validates the GraphQL syntax and returns metadata about the query.
+  The returned query_id is used in subsequent calls to generate_sql/3.
 
   ## Parameters
 
-  - `query`: The GraphQL query string
-  - `variables`: Variables for the GraphQL query (JSON string or map)
-  - `resolver`: Module implementing the required resolver methods
-  - `ctx`: Context map passed to all resolver functions (default: %{})
+    * `query` - The GraphQL query string to parse
 
   ## Returns
 
-  - `{:ok, sql_result}`: Successfully generated SQL
-  - `{:error, reason}`: Error encountered during parsing, analysis, or SQL generation
+    * `{:ok, query_id, operation_kind, operation_name}`
+      * `query_id` - A unique identifier for the parsed query
+      * `operation_kind` - The type of operation (`:query`, `:mutation`, or `:subscription`)
+      * `operation_name` - The name of the operation if present, or an empty string
 
-  ## Example
+    * `{:error, reason}` - If parsing fails
 
-  ```elixir
-  query = "query GetUserPosts($userId: ID!) { user(id: $userId) { posts { id title } } }"
-  variables = %{"userId" => "123"}
-  ctx = %{current_user_id: "456"}
+  ## Examples
 
-  {:ok, sql_result} = GraSQL.generate_sql(query, variables, MyApp.Resolver, ctx)
-  ```
+      # Parse a simple unnamed query
+      iex> {:ok, _id, kind, name} = GraSQL.parse_query("query { users { id } }")
+      iex> {kind, name}
+      {:query, ""}
+
+      # Parse a named query
+      iex> {:ok, _id, kind, name} = GraSQL.parse_query("query GetUsers { users { id } }")
+      iex> {kind, name}
+      {:query, "GetUsers"}
+
+      # Error handling
+      iex> result = GraSQL.parse_query("query { invalid syntax")
+      iex> match?({:error, _}, result)
+      true
   """
-  def generate_sql(query, variables, resolver, ctx \\ %{}) do
-    variables_json = prepare_variables(variables)
-    validate_resolver(resolver)
+  @spec parse_query(String.t()) ::
+          {:ok, String.t(), atom(), String.t()} | {:error, String.t()}
+  def parse_query(query) do
+    case Native.parse_query(query) do
+      {:ok, query_id, operation_kind, operation_name} ->
+        {:ok, query_id, operation_kind, operation_name}
 
-    # Phase 1: Parse and analyze the GraphQL query
-    with {:ok, initial_qst} <- Native.parse_and_analyze_query(query, variables_json) do
-      is_mutation = mutation?(initial_qst)
-      validate_mutation_resolver(resolver, is_mutation)
+      {:error, reason} when is_binary(reason) ->
+        {:error, reason |> String.trim()}
 
-      # Apply resolver methods and generate SQL
-      enriched_qst = enrich_query(initial_qst, resolver, ctx, is_mutation)
-      Native.generate_sql(enriched_qst, %{}, %{})
+      error ->
+        error
     end
   end
 
-  # Convert variables to JSON string
-  defp prepare_variables(variables) do
-    case variables do
-      %{} = map ->
-        Jason.encode!(map)
+  @doc """
+  Generate SQL from a GraphQL query.
 
-      binary when is_binary(binary) ->
-        binary
+  This function takes a GraphQL query and variables, and generates the corresponding SQL query
+  with parameterized values using the configured resolver.
 
-      nil ->
-        "{}"
+  ## Parameters
 
-      other ->
-        raise ArgumentError,
-              "variables must be a map, JSON string, or nil, got: #{inspect(other)}"
-    end
-  end
+    * `query` - The GraphQL query string
+    * `variables` - A map of GraphQL variables used in the query
+    * `ctx` - Context map passed to resolver functions (default: `%{}`)
+    * `options` - Additional options for SQL generation (default: `%{}`)
 
-  # Validate that resolver implements required methods
-  defp validate_resolver(resolver) do
-    required_methods = [:resolve_tables, :resolve_relationships, :set_permissions]
+  ## Returns
 
-    for method <- required_methods do
-      unless Code.ensure_loaded?(resolver) and function_exported?(resolver, method, 2) do
-        raise ArgumentError, "resolver must implement #{method}/2"
+    * `{:ok, sql, params}`
+      * `sql` - The generated SQL query string
+      * `params` - A list of parameter values to be used with the SQL query
+
+    * `{:error, reason}` - If SQL generation fails
+
+  ## Examples
+
+      # Generate SQL for a simple query
+      iex> query = "query { users { id name } }"
+      iex> {:ok, _query_id, _kind, _name} = GraSQL.parse_query(query)
+      iex> match?({:ok, _, _}, GraSQL.generate_sql(query, %{}))
+      true
+
+      # Using variables
+      iex> query = "query($id: ID!) { user(id: $id) { name } }"
+      iex> result = GraSQL.generate_sql(query, %{"id" => 123})
+      iex> match?({:ok, _, _}, result)
+      true
+
+      # Error handling
+      iex> result = GraSQL.generate_sql("invalid", %{})
+      iex> match?({:error, _}, result)
+      true
+  """
+  @spec generate_sql(String.t(), map(), map(), map()) ::
+          {:ok, String.t(), list()} | {:error, String.t()}
+  def generate_sql(query, variables, _ctx \\ %{}, _options \\ %{}) do
+    # Get the pre-validated config from application environment
+    _config = get_current_config()
+
+    # All validation is now done during application startup or Config.reload_with_resolver
+    with {:ok, query_id, _, _} <- parse_query(query) do
+      # This would normally call resolve_tables and resolve_relationships
+      # before generating SQL, but that's for future implementation
+      case Native.generate_sql(query_id, variables) do
+        {:ok, sql, params} ->
+          # Extract values from variables and add to params
+          actual_params =
+            variables
+            |> Map.values()
+            |> Enum.concat(params)
+
+          {:ok, sql, actual_params}
+
+        error ->
+          error
       end
     end
   end
 
-  # Validate that resolver implements set_overrides/2 for mutations
-  defp validate_mutation_resolver(resolver, true) do
-    unless Code.ensure_loaded?(resolver) and function_exported?(resolver, :set_overrides, 2) do
-      raise ArgumentError, "resolver must implement set_overrides/2 for mutations"
-    end
-  end
+  # Private helpers
 
-  defp validate_mutation_resolver(_resolver, false), do: :ok
-
-  # Apply resolver methods to enrich the query
-  defp enrich_query(qst, resolver, ctx, is_mutation) do
-    qst
-    |> resolver.resolve_tables(ctx)
-    |> resolver.resolve_relationships(ctx)
-    |> resolver.set_permissions(ctx)
-    |> then(fn enriched_qst ->
-      if is_mutation do
-        resolver.set_overrides(enriched_qst, ctx)
-      else
-        enriched_qst
-      end
-    end)
-  end
-
-  # Helper function to determine if the analysis represents a mutation
-  defp mutation?(qst) do
-    # Implementation depends on the structure of QST from the Rust NIF
-    Map.get(qst, :operation_type) == "mutation"
+  defp get_current_config do
+    # Get the validated configuration struct that was stored during application startup
+    # or explicitly loaded via Config.reload_with_resolver
+    Application.get_env(:grasql, :__config__) ||
+      raise "GraSQL configuration not found. Application may not have been properly initialized."
   end
 end

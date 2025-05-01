@@ -4,26 +4,48 @@
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/grasql/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
-A high-performance GraphQL to SQL compiler optimized for PostgreSQL, used by the Simple Platform.
+A GraphQL to SQL compiler written in Elixir with Rust NIFs for performance-critical operations. GraSQL aims to generate efficient SQL directly from GraphQL queries.
+
+## Project Status
+
+**Early Development**: GraSQL is currently in early development. Core components like GraphQL parsing and query caching are functional, but the full GraphQL to SQL transformation is still being implemented.
 
 ## Overview
 
-GraSQL is designed to transform GraphQL queries into highly optimized SQL with extreme performance (100K+ queries/second). The library uses a resolver approach that efficiently handles schema resolution, permissions, and query optimization.
+GraSQL aims to transform GraphQL queries into optimized SQL statements. The project uses a resolver approach for schema mapping, making it adaptable to different database schemas and authorization requirements.
 
-## Architecture
+## Current Features
 
-For detailed architecture information, see the [Architecture Document](docs/architecture.md).
+- **GraphQL Query Parsing**:
+  - Fast parsing of GraphQL queries using Rust
+  - Extraction of operation kind and operation name
+  - Performance-optimized implementation
+- **Efficient Query Caching**:
+  - xxHash-based caching of parsed queries
+  - Configurable cache size and TTL
+  - Automatic LRU eviction
+- **Flexible Configuration**:
+  - Naming conventions for fields and parameters
+  - Operator mappings between GraphQL and SQL
+  - Cache settings for optimization
+  - Performance limits to prevent resource exhaustion
+- **Schema Resolver Framework**:
+  - Behavior definition for database schema mapping
+  - Interface for resolving tables and relationships
 
-## Features
+## Planned Features
 
-- Ultra-fast GraphQL to SQL compilation using Rust (via Rustler)
-- Structured resolver approach for schema mapping and permissions
-- Efficient schema resolution that minimizes memory usage
-- Cross-schema query support for complex database structures
-- Permission filtering and mutation value overrides
-- Transaction-safe SQL generation
-- Parameterized queries for security and performance
-- Used and maintained by the Simple Platform
+- **Complete SQL Generation**:
+  - Generation of optimized SQL from GraphQL queries
+  - Support for nested relationships
+  - Field selection based on GraphQL query structure
+- **Query Capabilities**:
+  - Filtering at root and nested levels
+  - Sorting and pagination
+  - Aggregation functions
+- **Security Features**:
+  - Fully parameterized queries
+  - Context-aware resolvers for authorization
 
 ## Installation
 
@@ -43,64 +65,133 @@ Then run:
 mix deps.get
 ```
 
-## Usage
+## Configuration
 
-GraSQL uses a resolver-based approach for maximum efficiency and clarity:
+GraSQL is automatically initialized at application startup and can be configured through application environment variables:
 
 ```elixir
-defmodule MyApp.GraphQL do
-  alias GraSQL
+# In config/config.exs
+config :grasql,
+  query_cache_max_size: 2000,
+  max_query_depth: 15,
+  schema_resolver: MyApp.SchemaResolver
+```
 
-  # First, implement a resolver that maps GraphQL types to your database
-  defmodule Resolver do
-    # Map GraphQL types to database tables
-    def resolve_tables(qst) do
-      # Implementation that adds table information to the QST
-      # ...
-    end
+Available configuration options:
 
-    # Define relationships between tables
-    def resolve_relationships(qst) do
-      # Implementation that adds relationship information to the QST
-      # ...
-    end
+| Option                      | Description                                             | Default                 |
+| --------------------------- | ------------------------------------------------------- | ----------------------- |
+| `query_cache_max_size`      | Maximum number of entries in the query cache            | 1000                    |
+| `query_cache_ttl_seconds`   | Time-to-live for cache entries in seconds               | 3600                    |
+| `max_query_depth`           | Maximum allowed depth for GraphQL queries               | 10                      |
+| `aggregate_field_suffix`    | Suffix for aggregate field names                        | "\_agg"                 |
+| `primary_key_argument_name` | Parameter name for primary key in single entity queries | "id"                    |
+| `operators`                 | Map of GraphQL operator suffixes                        | See `GraSQL.Config`     |
+| `schema_resolver`           | Module implementing the SchemaResolver behavior         | `GraSQL.SimpleResolver` |
 
-    # Apply permission filters
-    def set_permissions(qst) do
-      # Implementation that adds permission filters to the QST
-      # ...
-    end
+See `GraSQL.Config` module documentation for all available configuration options.
 
-    # Set overrides for mutations (only called for mutation operations)
-    def set_overrides(qst) do
-      # Implementation that adds value overrides to the QST
-      # ...
-    end
+## Basic Usage
+
+### 1. Define a Schema Resolver
+
+```elixir
+defmodule MyApp.SchemaResolver do
+  @behaviour GraSQL.SchemaResolver
+
+  @impl true
+  def resolve_table(table, _ctx) do
+    # Add database schema information
+    Map.merge(table, %{
+      schema: "public",
+      columns: ["id", "name", "email"],
+      primary_key: ["id"]
+    })
   end
 
-  def execute_query(query, variables, _user_id) do
-    # Generate SQL using the resolver
-    case GraSQL.generate_sql(query, variables, Resolver) do
-      {:ok, sql_result} ->
-        # Execute the SQL with your database client
-        MyApp.Database.execute(sql_result.sql, sql_result.parameters)
-
-      {:error, error} ->
-        {:error, handle_error(error)}
-    end
+  @impl true
+  def resolve_relationship(relationship, _ctx) do
+    # Define relationship between tables
+    Map.merge(relationship, %{
+      join_type: :left_outer,
+      join_conditions: [{"users.id", "posts.user_id"}]
+    })
   end
 end
 ```
 
-## Performance
+### 2. Configure the Resolver
 
-GraSQL achieves exceptional performance through:
+```elixir
+# In config/config.exs
+config :grasql,
+  schema_resolver: MyApp.SchemaResolver
+```
 
-- Rust-powered parsing and SQL generation
-- Minimal memory usage with focused schema resolution
-- Efficient binary encoding for cross-language operations
-- Query optimization techniques
-- Fast parameterization
+### 3. Parse and Process a GraphQL Query
+
+```elixir
+query = """
+{
+  users {
+    id
+    name
+  }
+}
+"""
+
+# Parse the query
+case GraSQL.parse_query(query) do
+  {:ok, query_id, operation_kind, operation_name} ->
+    IO.puts("Parsed query with ID: #{query_id}")
+
+    # Generate SQL (note: SQL generation is limited in current implementation)
+    case GraSQL.generate_sql(query, %{}) do
+      {:ok, sql, params} ->
+        # Execute the SQL with your database client
+        IO.puts("Generated SQL: #{sql}")
+
+      {:error, reason} ->
+        # Handle error
+        IO.puts("Failed to generate SQL: #{reason}")
+    end
+
+  {:error, reason} ->
+    # Handle error
+    IO.puts("Failed to parse query: #{reason}")
+end
+```
+
+Note: The SQL generation functionality is in early development and currently returns basic placeholder SQL.
+
+## Development Status and Roadmap
+
+GraSQL is being actively developed with the following priorities:
+
+1. **Current Status**: Basic GraphQL parsing, caching, and configuration system are implemented.
+2. **Short-term Goals**: Complete SQL generation for simple queries.
+3. **Medium-term Goals**: Support for filters, sorting, and nested relationships.
+4. **Long-term Goals**: Full feature parity with the planned feature set.
+
+## Benchmarks
+
+GraSQL includes benchmarks for GraphQL parsing and query hashing performance in `native/grasql/benches/parser_benchmark.rs`. These benchmarks test performance with simple, medium, and complex GraphQL queries.
+
+To run the benchmarks:
+
+```shell
+cd native/grasql
+cargo bench
+```
+
+## Limitations
+
+Current limitations include:
+
+- **SQL Generation**: Still in early implementation stage with placeholder functionality
+- **Schema Resolution**: Framework is defined but actual resolution logic is application-specific
+- **GraphQL Features**: Currently does not support fragments, directives, or subscriptions
+- **Query Complexity**: Complex filters and sorting are planned but not yet implemented
 
 ## Documentation
 

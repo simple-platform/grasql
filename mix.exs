@@ -22,7 +22,8 @@ defmodule GraSQL.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger]
+      extra_applications: [:logger],
+      mod: {GraSQL.Application, []}
     ]
   end
 
@@ -33,6 +34,7 @@ defmodule GraSQL.MixProject do
       # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"}
       {:jason, "~> 1.4"},
       {:rustler, "0.36.1", runtime: false},
+      {:typed_struct, "~> 0.3.0"},
       {:credo, "== 1.7.12", only: [:dev, :test], runtime: false},
       {:excoveralls, "0.18.5", only: :test}
     ]

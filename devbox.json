@@ -1,15 +1,19 @@
 {
   "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.14.2/.schema/devbox.schema.json",
   "packages": {
-    "erlang": "27.2",
-    "elixir": "1.18.1",
+    "erlang":                   "27.2",
+    "elixir":                   "1.18.1",
     "beam27Packages.elixir-ls": "0.27.2",
-    "rustup": "1.27.1",
-    "bun": "1.2.8",
-    "nodejs": "23.11.0"
+    "rustup":                   "1.27.1",
+    "bun":                      "1.2.8",
+    "nodejs":                   "23.11.0",
+    "flatbuffers":              "25.1.24",
+    "gh":                       "2.69.0"
   },
   "env": {
-    "DEVBOX_COREPACK_ENABLED": "true"
+    "RUST_BACKTRACE":                         "full",
+    "DEVBOX_COREPACK_ENABLED":                "true",
+    "CARGO_PROFILE_DEV_BUILD_OVERRIDE_DEBUG": "true"
   },
   "shell": {
     "init_hook": [
