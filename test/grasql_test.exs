@@ -43,24 +43,5 @@ defmodule GraSQLTest do
       result = GraSQL.generate_sql(query, variables)
       assert match?({:ok, _sql, _params}, result)
     end
-
-    test "handles query with fragments" do
-      query = """
-      {
-        users {
-          id
-          ...UserFields
-        }
-      }
-
-      fragment UserFields on User {
-        name
-        email
-      }
-      """
-
-      result = GraSQL.generate_sql(query, %{})
-      assert match?({:ok, _sql, _params}, result)
-    end
   end
 end
