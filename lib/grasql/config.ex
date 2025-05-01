@@ -208,7 +208,7 @@ defmodule GraSQL.Config do
          is_integer(config.cache_ttl) and config.cache_ttl >= 0 do
       :ok
     else
-      {:error, "Cache settings must be positive integers"}
+      {:error, "Cache settings must be non-negative integers"}
     end
   end
 
