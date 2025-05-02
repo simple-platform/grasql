@@ -35,10 +35,11 @@ defmodule GraSQL.Native do
 
   ## Returns
 
-    * `{:ok, query_id, operation_kind, operation_name}`
+    * `{:ok, query_id, operation_kind, operation_name, resolution_request}`
        - `query_id`: A unique identifier for the parsed query
        - `operation_kind`: The kind of operation (:query, :mutation, or :subscription)
        - `operation_name`: The name of the operation if provided, or empty string
+       - `resolution_request`: A map containing field names and paths that need resolution
 
     * `{:error, reason}` - If parsing fails
 

@@ -36,3 +36,4 @@ node_modules/
 **/*.dylib
 
 **/qst_generated.rs
+bench/output

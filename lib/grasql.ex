@@ -64,22 +64,23 @@ defmodule GraSQL do
 
   ## Returns
 
-    * `{:ok, query_id, operation_kind, operation_name}`
+    * `{:ok, query_id, operation_kind, operation_name, resolution_request}`
       * `query_id` - A unique identifier for the parsed query
       * `operation_kind` - The type of operation (`:query`, `:mutation`, or `:subscription`)
       * `operation_name` - The name of the operation if present, or an empty string
+      * `resolution_request` - A map containing field names and paths that need resolution
 
     * `{:error, reason}` - If parsing fails
 
   ## Examples
 
       # Parse a simple unnamed query
-      iex> {:ok, _id, kind, name} = GraSQL.parse_query("query { users { id } }")
+      iex> {:ok, _id, kind, name, _req} = GraSQL.parse_query("query { users { id } }")
       iex> {kind, name}
       {:query, ""}
 
       # Parse a named query
-      iex> {:ok, _id, kind, name} = GraSQL.parse_query("query GetUsers { users { id } }")
+      iex> {:ok, _id, kind, name, _req} = GraSQL.parse_query("query GetUsers { users { id } }")
       iex> {kind, name}
       {:query, "GetUsers"}
 
@@ -89,11 +90,11 @@ defmodule GraSQL do
       true
   """
   @spec parse_query(String.t()) ::
-          {:ok, String.t(), atom(), String.t()} | {:error, String.t()}
+          {:ok, String.t(), atom(), String.t(), map()} | {:error, String.t()}
   def parse_query(query) do
     case Native.parse_query(query) do
-      {:ok, query_id, operation_kind, operation_name} ->
-        {:ok, query_id, operation_kind, operation_name}
+      {:ok, query_id, operation_kind, operation_name, resolution_request} ->
+        {:ok, query_id, operation_kind, operation_name, resolution_request}
 
       {:error, reason} when is_binary(reason) ->
         {:error, reason |> String.trim()}
@@ -128,7 +129,7 @@ defmodule GraSQL do
 
       # Generate SQL for a simple query
       iex> query = "query { users { id name } }"
-      iex> {:ok, _query_id, _kind, _name} = GraSQL.parse_query(query)
+      iex> {:ok, _query_id, _kind, _name, _req} = GraSQL.parse_query(query)
       iex> match?({:ok, _, _}, GraSQL.generate_sql(query, %{}))
       true
 
@@ -147,12 +148,13 @@ defmodule GraSQL do
           {:ok, String.t(), list()} | {:error, String.t()}
   def generate_sql(query, variables, _ctx \\ %{}, _options \\ %{}) do
     # Get the pre-validated config from application environment
-    _config = get_current_config()
+    config = get_current_config()
 
     # All validation is now done during application startup or Config.reload_with_resolver
-    with {:ok, query_id, _, _} <- parse_query(query) do
-      # This would normally call resolve_tables and resolve_relationships
-      # before generating SQL, but that's for future implementation
+    with {:ok, query_id, _, _, _resolution_request} <- parse_query(query) do
+      # Process the resolution_request through Schema Resolver
+      _schema_resolver = config.schema_resolver
+
       case Native.generate_sql(query_id, variables) do
         {:ok, sql, params} ->
           # Extract values from variables and add to params

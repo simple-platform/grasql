@@ -143,9 +143,20 @@ defmodule GraSQL.ConfigTest do
       assert {:error, "Performance settings must be positive integers"} =
                Config.validate(%Config{max_query_depth: "10"})
 
+      # Test with invalid string_interner_capacity
+      assert {:error, "Performance settings must be positive integers"} =
+               Config.validate(%Config{string_interner_capacity: 0})
+
+      # Test with invalid string_interner_capacity
+      assert {:error, "Performance settings must be positive integers"} =
+               Config.validate(%Config{string_interner_capacity: "10000"})
+
       # Test with valid max_query_depth
       assert {:ok, _} =
-               Config.validate(%Config{max_query_depth: 5})
+               Config.validate(%Config{
+                 max_query_depth: 5,
+                 string_interner_capacity: 10_000
+               })
     end
   end
 
