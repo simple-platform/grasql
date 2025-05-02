@@ -11,7 +11,7 @@ As a high-performance GraphQL to SQL compiler, GraSQL's performance is critical 
 The benchmarks were conducted using a combination of tools:
 
 1. **Rust Component Benchmarks**: Using Criterion, a statistics-driven benchmarking library for Rust
-2. **Elixir Pipeline Benchmarks**: Using Benchee, a Elixir benchmarking library
+2. **Elixir Pipeline Benchmarks**: Using Benchee, an Elixir benchmarking library
 3. **Concurrency Tests**: Using Elixir's Task module to measure throughput under concurrent load
 
 The benchmarks were run on an Apple M1 Max with 10 cores and 64GB of memory, but the relative performance characteristics should be consistent across different hardware.
