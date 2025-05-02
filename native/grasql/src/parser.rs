@@ -9,7 +9,7 @@ use graphql_query::ast::{ASTContext, Definition, Document, ParseNode};
 ///
 /// This function parses a GraphQL query string and extracts operation information
 /// such as the operation kind (query, mutation, subscription) and name.
-#[inline]
+#[inline(always)]
 pub fn parse_graphql(query: &str) -> Result<ParsedQueryInfo, String> {
     // Create a new AST context
     let ctx = ASTContext::new();

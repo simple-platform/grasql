@@ -16,6 +16,7 @@ pub enum GraphQLOperationKind {
 }
 
 impl From<OperationKind> for GraphQLOperationKind {
+    #[inline(always)]
     fn from(kind: OperationKind) -> Self {
         match kind {
             OperationKind::Query => GraphQLOperationKind::Query,

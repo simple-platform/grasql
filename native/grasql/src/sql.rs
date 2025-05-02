@@ -8,6 +8,7 @@ use crate::types::ParsedQueryInfo;
 ///
 /// This is a placeholder implementation that will be expanded with full SQL generation
 /// logic in the future. Currently, it just generates a basic SELECT statement.
+#[inline(always)]
 pub fn generate_sql(parsed_query_info: &ParsedQueryInfo) -> String {
     // Placeholder SQL generation - in a real implementation this would use
     // the parsed query structure to generate SQL based on its operations,

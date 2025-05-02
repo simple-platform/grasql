@@ -6,6 +6,7 @@ use std::time::Duration;
 use xxhash_rust::xxh3::xxh3_64;
 
 /// Create a cache based on the current configuration
+#[inline(always)]
 fn create_cache_from_config() -> Cache<String, ParsedQueryInfo> {
     // Get current configuration or use defaults if not initialized
     let config_guard = match CONFIG.lock() {
@@ -38,18 +39,20 @@ pub static QUERY_CACHE: Lazy<Cache<String, ParsedQueryInfo>> =
 /// This function generates a consistent hash for a given GraphQL query string,
 /// which is used as the cache key. The xxHash algorithm is used for its
 /// speed and quality.
-#[inline]
+#[inline(always)]
 pub fn generate_query_id(query: &str) -> String {
     let hash = xxh3_64(query.as_bytes());
     format!("{:x}", hash)
 }
 
 /// Add a parsed query to the cache
+#[inline(always)]
 pub fn add_to_cache(query_id: &str, parsed_query_info: ParsedQueryInfo) {
     QUERY_CACHE.insert(query_id.to_string(), parsed_query_info);
 }
 
 /// Get a parsed query from the cache
+#[inline(always)]
 pub fn get_from_cache(query_id: &str) -> Option<ParsedQueryInfo> {
     QUERY_CACHE.get(query_id).map(|val| val.clone())
 }

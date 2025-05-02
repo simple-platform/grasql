@@ -44,11 +44,36 @@ GraSQL processes GraphQL queries in three distinct phases:
 
 #### Phase 1: Query Scanning
 
-- User submits a GraphQL query string to the Parser NIF
-- Parser parses the GraphQL query and extracts what needs resolution
-- Parser generates a unique query ID and stores the parsed query in an internal cache
-- Parser returns the query ID and resolution request to Elixir
-- Outputs: Query ID and Resolution Request
+The Query Scanning phase is optimized for high performance and minimal memory usage:
+
+1. **Parsing**: A GraphQL query string is parsed using the `graphql-query` crate's arena-based allocator. This approach minimizes allocations and improves parsing performance.
+
+2. **Field Path Extraction**: The parser extracts field paths that need resolution, including:
+
+   - Fields from the selection sets (tree structure)
+   - Fields from filter expressions (where clauses)
+
+   This extraction process uses a single-pass visitor pattern to efficiently traverse the AST.
+
+3. **String Interning**: Field names are interned to optimize memory usage and comparison operations. Each unique string is stored only once in a global table, and integer IDs are used throughout the system to reference these strings.
+
+4. **Deduplication**: Field paths are stored in a HashSet to automatically eliminate duplicates, ensuring each field path is only resolved once.
+
+5. **Cache Management**: The parsed query is stored in a thread-safe cache using xxHash (an extremely fast hashing algorithm) for query ID generation. This enables efficient reuse of the parsed AST in Phase 3.
+
+6. **Memory Optimization**: Several techniques are used to minimize memory usage:
+
+   - SmallVec for field paths that are typically short (<8 elements)
+   - Arena allocation for AST nodes
+   - Structural sharing for common path prefixes
+   - Minimal data structures crossing the NIF boundary
+
+7. **NIF Interface**: The parser returns a minimal resolution request to Elixir, containing only the field names and unique field paths that need resolution. This minimizes data transfer across the NIF boundary.
+
+The output of Phase 1 includes:
+
+- A query ID that can be used to retrieve the cached AST in Phase 3
+- A minimal resolution request containing only the field names and paths that need to be resolved
 
 #### Phase 2: Schema Resolution
 

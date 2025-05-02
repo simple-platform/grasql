@@ -34,6 +34,7 @@ pub struct Config {
 pub static CONFIG: Lazy<Mutex<Option<Config>>> = Lazy::new(|| Mutex::new(None));
 
 /// Translates a GraphQL operator to SQL operator
+#[inline(always)]
 pub fn translate_operator(graphql_op: &str) -> &'static str {
     match graphql_op {
         "_eq" => "=",
