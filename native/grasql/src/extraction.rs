@@ -195,7 +195,11 @@ pub fn convert_paths_to_indices(
         .iter()
         .map(|path| {
             path.iter()
-                .map(|&symbol_id| *symbol_to_index.get(&symbol_id).unwrap())
+                .map(|&symbol_id| {
+                    *symbol_to_index
+                        .get(&symbol_id)
+                        .expect("symbol id missing in index; corrupted ResolutionRequest")
+                })
                 .collect()
         })
         .collect()

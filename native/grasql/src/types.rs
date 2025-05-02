@@ -134,9 +134,9 @@ pub struct CachedQueryInfo {
 }
 
 /// Convert ParsedQueryInfo to CachedQueryInfo
-impl From<ParsedQueryInfo> for CachedQueryInfo {
+impl<'a> From<ParsedQueryInfo<'a>> for CachedQueryInfo {
     #[inline(always)]
-    fn from(info: ParsedQueryInfo) -> Self {
+    fn from(info: ParsedQueryInfo<'a>) -> Self {
         CachedQueryInfo {
             operation_kind: info.operation_kind,
             operation_name: info.operation_name,
@@ -151,7 +151,7 @@ impl From<ParsedQueryInfo> for CachedQueryInfo {
 /// This struct holds information extracted from a GraphQL query during parsing.
 /// It includes the operation type, field paths, and other data needed for SQL generation.
 #[derive(Clone)]
-pub struct ParsedQueryInfo {
+pub struct ParsedQueryInfo<'a> {
     /// Kind of GraphQL operation
     pub operation_kind: GraphQLOperationKind,
 
@@ -167,12 +167,13 @@ pub struct ParsedQueryInfo {
     /// Store the original AST context for future use
     pub ast_context: Option<Arc<ASTContext>>,
 
-    /// Store the document with static lifetime for Phase 3
-    pub document: Option<Arc<Document<'static>>>,
+    /// Store the document for Phase 3
+    /// The document is only needed until SQL generation is complete
+    pub document: Option<Arc<Document<'a>>>,
 }
 
 // Manual Debug implementation to avoid ASTContext not implementing Debug
-impl fmt::Debug for ParsedQueryInfo {
+impl<'a> fmt::Debug for ParsedQueryInfo<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ParsedQueryInfo")
             .field("operation_kind", &self.operation_kind)

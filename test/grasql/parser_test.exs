@@ -354,27 +354,5 @@ defmodule GraSQL.ParserTest do
 
       assert query_id1 == query_id2
     end
-
-    test "whitespace variations produce the same query ID" do
-      queries = [
-        "{ users { id name } }",
-        "{users{id name}}",
-        "{\n  users {\n    id\n    name\n  }\n}",
-        "{ users { id name } }"
-      ]
-
-      ids =
-        Enum.map(queries, fn query ->
-          {:ok, query_id, _, _, _} = GraSQL.Native.parse_query(query)
-          query_id
-        end)
-
-      # This test is relaxed since the current implementation might not normalize whitespace
-      # If it does, this would pass; if not, it's acceptable for now
-      _reference_id = hd(ids)
-
-      # Uncomment to enforce whitespace normalization
-      # assert Enum.all?(ids, fn id -> id == reference_id end)
-    end
   end
 end

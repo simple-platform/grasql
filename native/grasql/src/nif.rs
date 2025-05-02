@@ -9,9 +9,7 @@ use crate::extraction::convert_paths_to_indices;
 use crate::interning::{get_all_strings, intern_str};
 use crate::parser::parse_graphql;
 use crate::sql::generate_sql;
-use crate::types::{
-    CachedQueryInfo, ResolutionRequest,
-};
+use crate::types::{CachedQueryInfo, ResolutionRequest};
 
 use rustler::{Encoder, Env, Error, NifResult, Term};
 use std::collections::HashMap;

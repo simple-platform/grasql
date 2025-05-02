@@ -19,7 +19,7 @@ The benchmarks were run on an Apple M1 Max with 10 cores and 64GB of memory, but
 Test queries ranged from simple to complex, including:
 
 - Simple single-entity queries
-- Medium complexity queries with 1-2 levels of nesting
+- Medium complexity queries with 1–2 levels of nesting
 - Complex queries with multiple nested relationships
 - Deeply nested queries (5+ levels)
 - Queries with complex filters, aggregations, pagination, and sorting
@@ -52,7 +52,7 @@ The Elixir benchmarks measure three key operations:
 
 Interestingly, for some query types, the full pipeline slightly outperforms individual components, likely due to caching effects and the minimal overhead of function calls between components.
 
-```
+```text
 Name                     ips        average  deviation         median         99th %
 simple_query         65.26 K       15.32 μs    ±34.60%       13.89 μs       29.26 μs
 medium_query         63.44 K       15.76 μs    ±33.53%       14.28 μs       30.19 μs
