@@ -35,10 +35,10 @@ Rust benchmarks show exceptional performance for the parsing phase:
 
 | Operation             | Performance    |
 | --------------------- | -------------- |
-| Direct AST Parsing    | 297ns - 1.9μs  |
-| Query Hashing         | 113ns - 119ns  |
-| Field Path Extraction | 354ns - 2.7μs  |
-| Full Parse GraphQL    | 6.3μs - 11.6μs |
+| Direct AST Parsing    | 299ns - 1.8μs  |
+| Query Hashing         | 109ns - 118ns  |
+| Field Path Extraction | 341ns - 2.7μs  |
+| Full Parse GraphQL    | 5.9μs - 11.1μs |
 
 The wide range represents simple to complex queries. Even the most complex queries can be parsed in under 12 microseconds, which translates to over 80,000 parses per second on a single thread.
 
@@ -46,27 +46,25 @@ The wide range represents simple to complex queries. Even the most complex queri
 
 The Elixir benchmarks measure three key operations:
 
-1. **parse_query**: Parses the GraphQL query and extracts field paths (~56K-65K ops/sec)
-2. **generate_sql**: Generates SQL from a parsed query (~48K-55K ops/sec)
-3. **full_pipeline**: Complete end-to-end processing (~50K-88K ops/sec)
+1. **parse_query**: Parses the GraphQL query and extracts field paths (~53K-63K ops/sec)
+2. **generate_sql**: Generates SQL from a parsed query (~48K-53K ops/sec)
+3. **full_pipeline**: Complete end-to-end processing (~48K-83K ops/sec)
 
 Interestingly, for some query types, the full pipeline slightly outperforms individual components, likely due to caching effects and the minimal overhead of function calls between components.
 
 ```text
 Name                     ips        average  deviation         median         99th %
-simple_query         65.26 K       15.32 μs    ±34.60%       13.89 μs       29.26 μs
-medium_query         63.44 K       15.76 μs    ±33.53%       14.28 μs       30.19 μs
-complex_query        56.65 K       17.65 μs    ±28.73%       16.37 μs       32.97 μs
-deeply_nested        56.54 K       17.69 μs    ±27.02%       16.42 μs       32.71 μs
+parse_query/simple_query 61.34 K    16.30 μs    ±456.98%      13.25 μs       36.79 μs
+full_pipeline/simple_query 54.61 K  18.31 μs    ±130.44%      16.42 μs       55.92 μs
+generate_sql/simple_query 52.65 K   18.99 μs    ±313.83%      16.33 μs       48.29 μs
 
 Comparison:
-simple_query         65.26 K
-medium_query         63.44 K - 1.03x slower
-complex_query        56.65 K - 1.15x slower
-deeply_nested        56.54 K - 1.15x slower
+parse_query/simple_query 61.34 K
+full_pipeline/simple_query 54.61 K - 1.12x slower
+generate_sql/simple_query 52.65 K - 1.17x slower
 
 # Concurrency benchmark (32 parallel tasks)
-Throughput: 60,606 queries/second
+Throughput: 72,893 queries/second
 ```
 
 ## Query Complexity Impact
@@ -75,12 +73,12 @@ Query complexity has a significant but manageable impact on performance:
 
 | Query Type      | Parse Time | Full Pipeline Time | Performance Impact                          |
 | --------------- | ---------- | ------------------ | ------------------------------------------- |
-| Simple Query    | 15.31 μs   | 18.32 μs           | Baseline                                    |
-| Medium Query    | 15.76 μs   | 17.99 μs           | Minimal impact                              |
-| Complex Query   | 17.65 μs   | 18.22 μs           | ~15% slower parsing                         |
-| Deeply Nested   | 17.69 μs   | 19.76 μs           | ~16% slower parsing, ~8% slower pipeline    |
-| Complex Filters | 17.19 μs   | 13.51 μs           | ~12% slower parsing, ~26% faster pipeline\* |
-| Aggregation     | 16.76 μs   | 11.38 μs           | ~9% slower parsing, ~38% faster pipeline\*  |
+| Simple Query    | 16.30 μs   | 18.31 μs           | Baseline                                    |
+| Medium Query    | 16.08 μs   | 18.59 μs           | Minimal impact                              |
+| Complex Query   | 18.64 μs   | 18.46 μs           | ~14% slower parsing                         |
+| Deeply Nested   | 18.80 μs   | 20.99 μs           | ~15% slower parsing, ~15% slower pipeline   |
+| Complex Filters | 17.36 μs   | 14.09 μs           | ~6% slower parsing, ~23% faster pipeline\*  |
+| Aggregation     | 17.95 μs   | 12.08 μs           | ~10% slower parsing, ~34% faster pipeline\* |
 
 \*Note: Faster pipeline times for some complex queries are likely due to caching effects and the specific query structure.
 
@@ -92,12 +90,12 @@ One of GraSQL's key strengths is how it scales with concurrent usage. The concur
 
 | Concurrency Level | Throughput (QPS) | Scaling Factor |
 | ----------------- | ---------------- | -------------- |
-| 1                 | 14,286           | 1x             |
-| 2                 | 22,222           | 1.56x          |
-| 4                 | 38,835           | 2.72x          |
-| 8                 | 36,530           | 2.56x          |
-| 16                | 45,845           | 3.21x          |
-| 32                | 60,606           | 4.24x          |
+| 1                 | 14,493           | 1x             |
+| 2                 | 26,316           | 1.82x          |
+| 4                 | 36,697           | 2.53x          |
+| 8                 | 40,000           | 2.76x          |
+| 16                | 44,077           | 3.04x          |
+| 32                | 72,893           | 5.03x          |
 
 GraSQL shows near-linear scaling up to 4 concurrent tasks, with continued performance improvements up to 32 concurrent tasks. While not perfectly linear (which would be unrealistic due to hardware constraints), this demonstrates that GraSQL can effectively utilize multiple CPU cores.
 
@@ -135,8 +133,8 @@ The xxHash3 algorithm provides ultra-fast, high-quality hashing for query ID gen
 
 These benchmarks demonstrate that GraSQL can handle the query loads of large-scale production applications. Even with simple hardware and unoptimized configurations, GraSQL achieves:
 
-- ~60K-80K QPS for individual operations
-- ~50K-60K QPS for concurrent full pipeline processing
+- ~50K-60K QPS for individual operations
+- ~70K+ QPS for concurrent full pipeline processing
 
 In production environments:
 

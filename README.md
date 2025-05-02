@@ -47,16 +47,16 @@ GraSQL translates GraphQL queries into efficient PostgreSQL SQL that leverages J
 GraSQL delivers exceptional performance across all phases of query processing:
 
 - **Parsing Speed**: Even complex GraphQL queries parse in under 12 microseconds
-- **High Throughput**: Benchmarks show ~60K-80K QPS for individual operations
-- **Concurrent Processing**: ~50K-60K QPS with concurrent full pipeline processing
+- **High Throughput**: Benchmarks show ~50K-60K QPS for individual operations
+- **Concurrent Processing**: ~70K+ QPS with concurrent full pipeline processing (32 threads)
 - **Scalability**: Near-linear scaling up to 4 concurrent tasks, with continued improvements up to 32+ tasks
 
 | Operation     | Simple Query | Complex Query | Deeply Nested |
 | ------------- | ------------ | ------------- | ------------- |
-| Parse Query   | 15.32 μs     | 17.65 μs      | 17.69 μs      |
-| Full Pipeline | 18.32 μs     | 18.22 μs      | 19.76 μs      |
+| Parse Query   | 16.30 μs     | 18.64 μs      | 18.80 μs      |
+| Full Pipeline | 18.31 μs     | 18.46 μs      | 20.99 μs      |
 
-Query complexity has minimal impact on performance, with even deeply nested queries seeing only ~16% slower parsing and ~8% slower full pipeline processing compared to simple queries.
+Query complexity has minimal impact on performance, with even deeply nested queries seeing only ~15% slower parsing and ~15% slower full pipeline processing compared to simple queries.
 
 In production environments with optimized configurations and multi-instance deployments, GraSQL can easily scale to hundreds of thousands of QPS, meeting its design target of 100,000+ QPS.
 

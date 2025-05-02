@@ -4,7 +4,7 @@
   "scripts": {
     "deps": "bun install && mix deps.get",
     "test": "cd native/grasql && cargo test && cd ../.. && mix coveralls.html",
-    "bench": "cd native/grasql && cargo bench && cd ../.. && mix run bench/grasql_bench.exs"
+    "bench": "cd native/grasql && cargo bench --profile release && cd ../.. && mix run bench/grasql_bench.exs"
   },
   "devDependencies": {
     "@commitlint/cli": "19.8.0",

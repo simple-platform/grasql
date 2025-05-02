@@ -379,17 +379,6 @@ fn bench_query_hashing(c: &mut Criterion) {
 fn bench_field_extraction(c: &mut Criterion) {
     let mut group = c.benchmark_group("field_path_extraction");
 
-    // Define a helper function for benchmarking extraction
-    let _bench_extraction = |b: &mut criterion::Bencher, query: &str, _name: &str| {
-        let ctx = ASTContext::new();
-        let document = Document::parse(&ctx, query).unwrap();
-
-        b.iter(|| {
-            let mut extractor = FieldPathExtractor::new();
-            let _ = extractor.extract(black_box(&document)).unwrap();
-        });
-    };
-
     // Benchmark all query types
     let queries = [
         ("simple_query", SIMPLE_QUERY),
