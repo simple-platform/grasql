@@ -36,7 +36,10 @@ defmodule GraSQL.MixProject do
       {:rustler, "0.36.1", runtime: false},
       {:typed_struct, "~> 0.3.0"},
       {:credo, "== 1.7.12", only: [:dev, :test], runtime: false},
-      {:excoveralls, "0.18.5", only: :test}
+      {:excoveralls, "0.18.5", only: :test},
+      {:benchee, "== 1.4.0", only: [:dev, :test]},
+      {:benchee_html, "~> 1.0", only: [:dev, :test]},
+      {:stream_data, "~> 1.2.0", only: [:dev, :test]}
     ]
   end
 end

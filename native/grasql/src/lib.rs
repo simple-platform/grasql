@@ -10,14 +10,20 @@
 mod atoms;
 mod cache;
 mod config;
+pub mod extraction; // Made public for testing
+pub mod interning;
 mod nif;
-mod parser;
+pub mod parser; // Made public for testing
 mod sql;
-mod types;
+pub mod types;
 
 // Re-exports for public API
 pub use config::Config;
-pub use types::{GraphQLOperationKind, ParsedQueryInfo};
+pub use extraction::{build_path_index, convert_paths_to_indices, FieldPathExtractor};
+pub use interning::{get_all_strings, intern_str, resolve_str};
+pub use types::{
+    CachedQueryInfo, FieldPath, GraphQLOperationKind, ParsedQueryInfo, ResolutionRequest, SymbolId,
+};
 
 // Module initialization
 fn load(_env: rustler::Env, opts: rustler::Term) -> bool {

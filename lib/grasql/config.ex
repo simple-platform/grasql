@@ -17,6 +17,9 @@ defmodule GraSQL.Config do
   @typedoc """
   Supported comparison operators in GraphQL queries.
 
+  * `:and` - Logical AND
+  * `:or` - Logical OR
+  * `:not` - Logical NOT
   * `:eq` - Equal to
   * `:neq` - Not equal to
   * `:gt` - Greater than
@@ -28,8 +31,38 @@ defmodule GraSQL.Config do
   * `:in` - Matches any value in a list
   * `:nin` - Does not match any value in a list
   * `:is_null` - Is NULL check
+  * `:json_contains` - JSON containment check (PostgreSQL `@>`)
+  * `:json_contained_in` - JSON contained by check (PostgreSQL `<@`)
+  * `:json_has_key` - JSON key existence check (PostgreSQL `?`)
+  * `:json_has_any_keys` - JSON path existence check (PostgreSQL `?|`)
+  * `:json_has_all_keys` - JSON path all existence check (PostgreSQL `?&`)
+  * `:json_path` - JSON field access (PostgreSQL `->`)
+  * `:json_path_text` - JSON field access as text (PostgreSQL `->>`)
+  * `:is_json` - JSON type validation check
   """
-  @type operator :: :eq | :neq | :gt | :lt | :gte | :lte | :like | :ilike | :in | :nin | :is_null
+  @type operator ::
+          :and
+          | :or
+          | :not
+          | :eq
+          | :neq
+          | :gt
+          | :lt
+          | :gte
+          | :lte
+          | :like
+          | :ilike
+          | :in
+          | :nin
+          | :is_null
+          | :json_contains
+          | :json_contained_in
+          | :json_has_key
+          | :json_has_any_keys
+          | :json_has_all_keys
+          | :json_path
+          | :json_path_text
+          | :is_json
 
   @typedoc """
   Configuration struct for GraSQL.
@@ -46,6 +79,7 @@ defmodule GraSQL.Config do
   ### Cache settings
   * `query_cache_max_size` - Maximum number of entries in the query cache
   * `query_cache_ttl_seconds` - Time-to-live for cache entries in seconds
+  * `string_interner_capacity` - Maximum number of strings to intern in the string interner
 
   ### Performance settings
   * `max_query_depth` - Maximum allowed depth for GraphQL queries
@@ -64,6 +98,7 @@ defmodule GraSQL.Config do
 
           # Performance settings
           max_query_depth: non_neg_integer(),
+          string_interner_capacity: non_neg_integer(),
 
           # Schema resolver
           schema_resolver: module()
@@ -76,6 +111,9 @@ defmodule GraSQL.Config do
 
     # Operator mappings - using standard GraphQL operator syntax
     operators: %{
+      and: "_and",
+      or: "_or",
+      not: "_not",
       eq: "_eq",
       neq: "_neq",
       gt: "_gt",
@@ -86,15 +124,24 @@ defmodule GraSQL.Config do
       ilike: "_ilike",
       in: "_in",
       nin: "_nin",
-      is_null: "_is_null"
+      is_null: "_is_null",
+      json_contains: "_json_contains",
+      json_contained_in: "_json_contained_in",
+      json_has_key: "_json_has_key",
+      json_has_any_keys: "_json_has_any_keys",
+      json_has_all_keys: "_json_has_all_keys",
+      json_path: "_json_path",
+      json_path_text: "_json_path_text",
+      is_json: "_is_json"
     },
 
     # Cache settings
     query_cache_max_size: 1000,
-    query_cache_ttl_seconds: 3600,
+    query_cache_ttl_seconds: 600,
 
     # Performance settings
     max_query_depth: 10,
+    string_interner_capacity: 10_000,
 
     # Schema resolver - default to SimpleResolver
     schema_resolver: GraSQL.SimpleResolver
@@ -282,7 +329,8 @@ defmodule GraSQL.Config do
   end
 
   defp validate_performance_settings(config) do
-    if is_integer(config.max_query_depth) and config.max_query_depth > 0 do
+    if is_integer(config.max_query_depth) and config.max_query_depth > 0 and
+         is_integer(config.string_interner_capacity) and config.string_interner_capacity > 0 do
       :ok
     else
       {:error, "Performance settings must be positive integers"}

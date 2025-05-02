@@ -20,6 +20,9 @@ pub struct Config {
     /// Operator mappings from GraphQL to SQL
     pub operators: HashMap<String, String>,
 
+    /// Maximum number of strings to intern in the string interner
+    pub string_interner_capacity: usize,
+
     /// Maximum number of parsed queries to store in cache
     pub query_cache_max_size: usize,
 
@@ -37,6 +40,9 @@ pub static CONFIG: Lazy<Mutex<Option<Config>>> = Lazy::new(|| Mutex::new(None));
 #[inline(always)]
 pub fn translate_operator(graphql_op: &str) -> &'static str {
     match graphql_op {
+        "_and" => "AND",
+        "_or" => "OR",
+        "_not" => "NOT",
         "_eq" => "=",
         "_neq" => "<>",
         "_gt" => ">",
@@ -48,6 +54,14 @@ pub fn translate_operator(graphql_op: &str) -> &'static str {
         "_in" => "IN",
         "_nin" => "NOT IN",
         "_is_null" => "IS NULL",
+        "_json_contains" => "@>",
+        "_json_contained_in" => "<@",
+        "_json_has_key" => "?",
+        "_json_has_any_keys" => "?|",
+        "_json_has_all_keys" => "?&",
+        "_json_path" => "->",
+        "_json_path_text" => "->>",
+        "_is_json" => "IS JSON",
         _ => "=", // Default to equals if unknown
     }
 }
