@@ -2,22 +2,28 @@ defmodule GraSQL.Application do
   @moduledoc """
   GraSQL Application module.
 
-  Responsible for starting the GraSQL application and its supervision tree.
-  Configuration is automatically loaded when the native implementation is
-  initialized.
+  Starts the GraSQL application and its supervision tree. Configuration is
+  automatically loaded during initialization.
 
   ## Configuration
 
-  GraSQL can be configured in your application's config.exs file:
+  Configure GraSQL in your application's config.exs file:
 
   ```elixir
   config :grasql,
+    # Caching settings
     query_cache_max_size: 2000,
+    query_cache_ttl_seconds: 600,
+
+    # Performance limits
     max_query_depth: 15,
+    string_interner_capacity: 10_000,
+
+    # Schema resolution
     schema_resolver: MyApp.SchemaResolver
   ```
 
-  See `GraSQL.Config` for all available configuration options.
+  See `GraSQL.Config` for details on all configuration options.
   """
   use Application
   require Logger

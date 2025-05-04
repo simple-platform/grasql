@@ -13,7 +13,10 @@ defmodule GraSQL.ConfigTest do
 
     test "rejects negative cache settings" do
       config = %Config{query_cache_max_size: -1}
-      assert {:error, "Cache settings must be non-negative integers"} = Config.validate(config)
+
+      assert {:error,
+              "Cache settings must be: query_cache_max_size > 0, query_cache_ttl_seconds ≥ 0"} =
+               Config.validate(config)
     end
 
     test "rejects invalid operator map" do
@@ -102,21 +105,25 @@ defmodule GraSQL.ConfigTest do
 
     test "validates cache settings" do
       # Test with invalid query_cache_max_size
-      assert {:error, "Cache settings must be non-negative integers"} =
+      assert {:error,
+              "Cache settings must be: query_cache_max_size > 0, query_cache_ttl_seconds ≥ 0"} =
                Config.validate(%Config{query_cache_max_size: 0})
 
-      assert {:error, "Cache settings must be non-negative integers"} =
+      assert {:error,
+              "Cache settings must be: query_cache_max_size > 0, query_cache_ttl_seconds ≥ 0"} =
                Config.validate(%Config{
                  query_cache_max_size: "1000"
                })
 
       # Test with invalid query_cache_ttl_seconds
-      assert {:error, "Cache settings must be non-negative integers"} =
+      assert {:error,
+              "Cache settings must be: query_cache_max_size > 0, query_cache_ttl_seconds ≥ 0"} =
                Config.validate(%Config{
                  query_cache_ttl_seconds: -1
                })
 
-      assert {:error, "Cache settings must be non-negative integers"} =
+      assert {:error,
+              "Cache settings must be: query_cache_max_size > 0, query_cache_ttl_seconds ≥ 0"} =
                Config.validate(%Config{
                  query_cache_ttl_seconds: "3600"
                })
@@ -187,6 +194,23 @@ defmodule GraSQL.ConfigTest do
 
       assert native_config.query_cache_max_size == 2000
       assert native_config.query_cache_ttl_seconds == 7200
+    end
+
+    test "only passes necessary configuration to NIF, excluding module references" do
+      config = %Config{
+        schema_resolver: GraSQL.SimpleResolver,
+        query_cache_max_size: 1000,
+        aggregate_field_suffix: "_agg"
+      }
+
+      native_config = Config.to_native_config(config)
+
+      # Should include expected fields
+      assert native_config.query_cache_max_size == 1000
+      assert native_config.aggregate_field_suffix == "_agg"
+
+      # Should not include module reference
+      refute Map.has_key?(native_config, :schema_resolver)
     end
   end
 end

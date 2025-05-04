@@ -18,14 +18,20 @@ GraSQL is in active development and follows a phased approach:
   - Advanced performance optimizations (string interning, smallvec, etc.)
   - Comprehensive test coverage including property-based testing
 
-- 🚧 **Phase 2: Schema Resolution** - IN PROGRESS
+- ✅ **Phase 2: Schema Resolution** - COMPLETE
 
-  - SchemaResolver behavior defined
-  - Integration with query parsing in development
+  - SchemaResolver behavior defined and implemented
+  - Parallel processing of tables and relationships
+  - Efficient path mapping for O(1) lookups
+  - Context passing for multi-tenancy support
+  - Integration with query parsing completed
 
 - 📝 **Phase 3: SQL Generation** - PLANNED
   - PostgreSQL-specific SQL generation
   - Optimized JSON response construction
+  - Parameterized queries for security
+  - Advanced filtering, pagination, and sorting
+  - Support for aggregations and nested queries
 
 ## Overview
 
@@ -41,6 +47,7 @@ GraSQL translates GraphQL queries into efficient PostgreSQL SQL that leverages J
 - **Pagination & Sorting**: Built-in support at any nesting level
 - **Relationship Handling**: Efficiently handles one-to-many and many-to-many relationships
 - **Aggregations**: Supports aggregation alongside regular queries
+- **Parallel Processing**: Resolves schema information concurrently for maximum throughput
 
 ## Performance
 
@@ -50,6 +57,7 @@ GraSQL delivers exceptional performance across all phases of query processing:
 - **High Throughput**: Benchmarks show ~50K-60K QPS for individual operations
 - **Concurrent Processing**: ~70K+ QPS with concurrent full pipeline processing (32 threads)
 - **Scalability**: Near-linear scaling up to 4 concurrent tasks, with continued improvements up to 32+ tasks
+- **Parallel Schema Resolution**: Resolves tables and relationships concurrently using all available CPU cores
 
 | Operation     | Simple Query | Complex Query | Deeply Nested |
 | ------------- | ------------ | ------------- | ------------- |
@@ -73,6 +81,7 @@ GraSQL employs several key optimizations to achieve its performance goals:
 - **Efficient Hashing**: xxHash3 for ultra-fast query ID generation
 - **Arena Allocation**: Using `bumpalo` for allocating related objects together in memory
 - **Minimal NIF Boundary**: Only essential data crosses between Elixir and Rust, with optimized encoding/decoding
+- **Parallel Processing**: Schema resolution uses Task.async_stream with dynamic concurrency based on available cores
 
 ## Installation
 
@@ -92,25 +101,46 @@ end
 # Configure GraSQL in your application
 config :grasql,
   query_cache_max_size: 2000,
+  query_cache_ttl_seconds: 600,
   max_query_depth: 15,
   aggregate_field_suffix: "_agg",
-  string_interner_capacity: 10000
+  string_interner_capacity: 10_000,
+  schema_resolver: MyApp.SchemaResolver
 
 # Implement the SchemaResolver behavior
 defmodule MyApp.SchemaResolver do
-  @behaviour GraSQL.SchemaResolver
+  use GraSQL.SchemaResolver
 
   @impl true
-  def resolve_table("users", _context), do: "public.users"
-  def resolve_table("posts", _context), do: "public.posts"
+  def resolve_table("users", _context) do
+    %GraSQL.Schema.Table{schema: "public", name: "users"}
+  end
 
   @impl true
-  def resolve_relationship("users", "posts", _context) do
-    %{
-      join_type: :inner,
-      table: "public.posts",
-      join_condition: "posts.user_id = users.id",
-      cardinality: :many
+  def resolve_relationship("posts", parent_table, _context) do
+    %GraSQL.Schema.Relationship{
+      type: :has_many,
+      source_table: parent_table,
+      target_table: %GraSQL.Schema.Table{schema: "public", name: "posts"},
+      source_columns: ["id"],
+      target_columns: ["user_id"],
+      join_table: nil
+    }
+  end
+
+  def resolve_relationship("categories", %{name: "posts"} = parent_table, _context) do
+    %GraSQL.Schema.Relationship{
+      type: :many_to_many,
+      source_table: parent_table,
+      target_table: %GraSQL.Schema.Table{schema: "public", name: "categories"},
+      source_columns: ["id"],
+      target_columns: ["id"],
+      join_table: %GraSQL.Schema.JoinTable{
+        schema: "public",
+        name: "post_categories",
+        source_columns: ["post_id"],
+        target_columns: ["category_id"]
+      }
     }
   end
 end
@@ -129,7 +159,10 @@ query {
 }
 """
 
-{:ok, {sql, params}} = GraSQL.to_sql(query, MyApp.SchemaResolver, %{user_id: 123})
+{:ok, sql, params} = GraSQL.generate_sql(query, %{user_id: 123})
+
+# Execute the SQL with your database library
+MyApp.Repo.query!(sql, params)
 ```
 
 ## Documentation

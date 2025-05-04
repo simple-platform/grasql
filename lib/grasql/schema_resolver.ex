@@ -1,139 +1,106 @@
 defmodule GraSQL.SchemaResolver do
   @moduledoc """
-  Behavior for resolving database schema information for GraSQL.
+  Behavior for resolving GraphQL fields to database tables and relationships.
 
-  This module defines callbacks for resolving tables and relationships
-  that are used during the GraphQL to SQL compilation process.
+  This behavior defines the contract for mapping GraphQL fields to your database schema.
+  Implement this behavior to customize how GraSQL translates field names to tables,
+  columns, and relationships.
 
-  Implement this behavior to provide custom schema resolution for your database.
-  The resolver is responsible for:
-
-  * Providing table metadata (columns, primary keys, etc.)
-  * Defining relationships between tables
-  * Specifying join conditions for queries
-  * Applying any database-specific customizations
-
-  ## Implementation Example
+  ## Example Implementation
 
   ```elixir
-  defmodule MyApp.DatabaseResolver do
-    @behaviour GraSQL.SchemaResolver
+  defmodule MyApp.CustomResolver do
+    use GraSQL.SchemaResolver
 
     @impl true
-    def resolve_table(%{name: "users"} = table, _ctx) do
-      Map.merge(table, %{
+    def resolve_table("users", _context) do
+      %GraSQL.Schema.Table{
         schema: "public",
-        columns: ["id", "name", "email", "created_at"],
-        primary_key: ["id"]
-      })
+        name: "users_table"  # Map "users" GraphQL field to "users_table"
+      }
     end
 
     @impl true
-    def resolve_relationship(%{from_table: "users", to_table: "posts"} = rel, _ctx) do
-      Map.merge(rel, %{
-        join_type: :left_outer,
-        join_conditions: [{"users.id", "posts.user_id"}]
-      })
+    def resolve_relationship("posts", parent_table, _context) do
+      %GraSQL.Schema.Relationship{
+        source_table: parent_table,
+        target_table: %GraSQL.Schema.Table{schema: "public", name: "posts"},
+        source_columns: ["id"],
+        target_columns: ["user_id"],
+        type: :has_many,
+        join_table: nil
+      }
     end
+  end
+  """
+
+  @doc """
+  Resolves a GraphQL field to a database table.
+
+  Determines which database table should be queried for a given GraphQL field.
+
+  ## Parameters
+
+  * `field_name` - The name of the GraphQL field
+  * `context` - Optional context map with user/tenant information
+
+  ## Returns
+
+  * A `GraSQL.Schema.Table` struct representing the resolved table
+
+  ## Example
+
+  ```elixir
+  def resolve_table("users", _context) do
+    %GraSQL.Schema.Table{
+      schema: "app_schema",
+      name: "users"
+    }
   end
   ```
   """
-
-  @type context :: %{optional(atom() | String.t()) => any()}
+  @callback resolve_table(field_name :: String.t(), context :: map()) :: GraSQL.Schema.Table.t()
 
   @doc """
-  Resolves table information for multiple tables in the query structure tree (QST).
+  Resolves a GraphQL relationship field to a database relationship.
 
-  This is called by GraSQL during the compilation phase to enrich the query
-  with database schema information.
-
-  Note: This is a placeholder implementation that will be fully implemented in a future release.
-  Currently, it does not modify the query structure tree.
+  Determines how a field relates to its parent table in the database.
 
   ## Parameters
-    * `qst` - The query structure tree
-    * `ctx` - Context map for custom information
+
+  * `field_name` - The name of the GraphQL relationship field
+  * `parent_table` - The resolved parent table
+  * `context` - Optional context map with user/tenant information
 
   ## Returns
-    * The enriched query structure tree
-  """
-  def resolve_tables(qst, _ctx) do
-    # This is a placeholder implementation that will be completed in a future release.
-    # It will call resolve_table/2 for each table in the query structure tree.
-    qst
+
+  * A `GraSQL.Schema.Relationship` struct representing the resolved relationship
+
+  ## Example
+
+  ```elixir
+  def resolve_relationship("comments", parent_table, _context) do
+    %GraSQL.Schema.Relationship{
+      source_table: parent_table,
+      target_table: %GraSQL.Schema.Table{schema: "public", name: "comments"},
+      source_columns: ["id"],
+      target_columns: ["post_id"],
+      type: :has_many,
+      join_table: nil
+    }
   end
-
-  @doc """
-  Resolves relationship information for the query structure tree (QST).
-
-  This is called by GraSQL during the compilation phase to add relationship
-  information to the query.
-
-  Note: This is a placeholder implementation that will be fully implemented in a future release.
-  Currently, it does not modify the query structure tree.
-
-  ## Parameters
-    * `qst` - The query structure tree
-    * `ctx` - Context map for custom information
-
-  ## Returns
-    * The enriched query structure tree with relationship information
+  ```
   """
-  def resolve_relationships(qst, _ctx) do
-    # This is a placeholder implementation that will be completed in a future release.
-    # It will call resolve_relationship/2 for each relationship in the query structure tree.
-    qst
+  @callback resolve_relationship(
+              field_name :: String.t(),
+              parent_table :: GraSQL.Schema.Table.t(),
+              context :: map()
+            ) :: GraSQL.Schema.Relationship.t()
+
+  defmacro __using__(_opts) do
+    quote do
+      @behaviour GraSQL.SchemaResolver
+      # No default implementations - users must implement these
+    end
   end
-
-  @doc """
-  Callback for resolving a single table's metadata.
-
-  Implement this function to provide database-specific information for a table.
-  The implementation should enrich the table map with metadata needed for SQL generation.
-
-  ## Parameters
-    * `table` - The table information map, which includes at minimum:
-      * `name` - The table name as referred to in the GraphQL query
-
-    * `ctx` - Context map for custom information, which may include:
-      * Database connection
-      * Schema information
-      * Tenant identifiers
-      * Any other custom data needed for resolution
-
-  ## Returns
-    * An updated table information map with resolved metadata, which should include:
-      * `schema` - Database schema name (optional)
-      * `columns` - List of column names
-      * `primary_key` - List of primary key column names
-      * Any additional metadata required by your implementation
-  """
-  @callback resolve_table(table :: map(), ctx :: context()) :: map()
-
-  @doc """
-  Callback for resolving a relationship between tables.
-
-  Implement this function to provide information about foreign keys and join conditions.
-  The implementation should specify how tables are related for SQL join operations.
-
-  ## Parameters
-    * `relationship` - The relationship information map, which includes at minimum:
-      * `from_table` - The source table name
-      * `to_table` - The target table name
-      * `field_name` - The GraphQL field name representing this relationship
-
-    * `ctx` - Context map for custom information, which may include:
-      * Database connection
-      * Schema information
-      * Tenant identifiers
-      * Any other custom data needed for resolution
-
-  ## Returns
-    * An updated relationship information map with resolved metadata, which should include:
-      * `join_type` - The type of SQL join (e.g., `:inner`, `:left_outer`)
-      * `join_conditions` - List of column pairs for the join condition, where each pair is
-        a tuple of `{from_column, to_column}` or a string containing a SQL condition
-      * Any additional metadata required by your implementation
-  """
-  @callback resolve_relationship(relationship :: map(), ctx :: context()) :: map()
 end
