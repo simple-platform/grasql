@@ -1,36 +1,42 @@
 defmodule GraSQL.Config do
   @moduledoc """
-  Configuration options for GraSQL.
+  Configuration for GraSQL's GraphQL to SQL translation process.
 
   This module defines the configuration struct and validation functions for
-  GraSQL's initialization phase. The configuration controls various aspects of
-  the GraphQL to SQL translation process, including:
+  GraSQL's initialization phase. Configuration controls:
 
   * Naming conventions for fields and parameters
   * Operator mappings between GraphQL and SQL
   * Cache settings for query optimization
   * Performance limits to prevent resource exhaustion
-
-  Use this module to customize GraSQL's behavior to match your application's needs.
   """
 
   @typedoc """
   Supported comparison operators in GraphQL queries.
 
+  ## Logical operators
   * `:and` - Logical AND
   * `:or` - Logical OR
   * `:not` - Logical NOT
+
+  ## Comparison operators
   * `:eq` - Equal to
   * `:neq` - Not equal to
   * `:gt` - Greater than
   * `:lt` - Less than
   * `:gte` - Greater than or equal to
   * `:lte` - Less than or equal to
+
+  ## Pattern matching
   * `:like` - SQL LIKE pattern matching
   * `:ilike` - Case-insensitive LIKE pattern matching
+
+  ## Collection operators
   * `:in` - Matches any value in a list
   * `:nin` - Does not match any value in a list
   * `:is_null` - Is NULL check
+
+  ## JSON operators
   * `:json_contains` - JSON containment check (PostgreSQL `@>`)
   * `:json_contained_in` - JSON contained by check (PostgreSQL `<@`)
   * `:json_has_key` - JSON key existence check (PostgreSQL `?`)
@@ -40,21 +46,26 @@ defmodule GraSQL.Config do
   * `:json_path_text` - JSON field access as text (PostgreSQL `->>`)
   * `:is_json` - JSON type validation check
   """
+  # Logical operators
   @type operator ::
           :and
           | :or
           | :not
+          # Comparison operators
           | :eq
           | :neq
           | :gt
           | :lt
           | :gte
           | :lte
+          # Pattern matching
           | :like
           | :ilike
+          # Collection operators
           | :in
           | :nin
           | :is_null
+          # JSON operators
           | :json_contains
           | :json_contained_in
           | :json_has_key
@@ -79,10 +90,13 @@ defmodule GraSQL.Config do
   ### Cache settings
   * `query_cache_max_size` - Maximum number of entries in the query cache
   * `query_cache_ttl_seconds` - Time-to-live for cache entries in seconds
-  * `string_interner_capacity` - Maximum number of strings to intern in the string interner
+  * `string_interner_capacity` - Maximum number of strings to intern
 
   ### Performance settings
   * `max_query_depth` - Maximum allowed depth for GraphQL queries
+
+  ### Schema resolution
+  * `schema_resolver` - Module that implements the SchemaResolver behavior
   """
   @type t :: %__MODULE__{
           # Naming conventions
@@ -93,12 +107,12 @@ defmodule GraSQL.Config do
           operators: %{operator => String.t()},
 
           # Cache settings
-          query_cache_max_size: non_neg_integer(),
+          query_cache_max_size: pos_integer(),
           query_cache_ttl_seconds: non_neg_integer(),
 
           # Performance settings
-          max_query_depth: non_neg_integer(),
-          string_interner_capacity: non_neg_integer(),
+          max_query_depth: pos_integer(),
+          string_interner_capacity: pos_integer(),
 
           # Schema resolver
           schema_resolver: module()
@@ -150,24 +164,25 @@ defmodule GraSQL.Config do
   @doc """
   Validates a GraSQL configuration.
 
-  This function checks all configuration values against their expected types and
-  constraints to ensure the configuration is valid before initialization.
+  Checks configuration values against expected types and constraints.
 
   ## Parameters
 
-    * `config` - A `GraSQL.Config` struct to validate
+  * `config` - A `GraSQL.Config` struct to validate
 
   ## Returns
 
-    * `{:ok, config}` - If the configuration is valid
-    * `{:error, reason}` - If validation fails, with a descriptive error message
+  * `{:ok, config}` - If configuration is valid
+  * `{:error, reason}` - If validation fails, with a descriptive error message
 
   ## Examples
 
-      iex> GraSQL.Config.validate(%GraSQL.Config{schema_resolver: GraSQL.SimpleResolver})
+      iex> config = %GraSQL.Config{schema_resolver: GraSQL.SimpleResolver}
+      iex> GraSQL.Config.validate(config)
       {:ok, %GraSQL.Config{schema_resolver: GraSQL.SimpleResolver}}
 
-      iex> GraSQL.Config.validate(%GraSQL.Config{query_cache_max_size: -1, schema_resolver: GraSQL.SimpleResolver})
+      iex> config = %GraSQL.Config{query_cache_max_size: -1, schema_resolver: GraSQL.SimpleResolver}
+      iex> GraSQL.Config.validate(config)
       {:error, "Cache settings must be non-negative integers"}
   """
   @spec validate(t()) :: {:ok, t()} | {:error, String.t()}
@@ -191,13 +206,12 @@ defmodule GraSQL.Config do
   @doc """
   Loads configuration from application environment and validates it.
 
-  This function centralizes the loading and validation of GraSQL configuration.
-  It should be called only once during application startup.
+  Centralizes loading and validation of GraSQL configuration.
 
   ## Returns
 
-    * `{:ok, config}` - If loading and validation are successful
-    * `{:error, reason}` - If validation fails, with a descriptive error message
+  * `{:ok, config}` - If loading and validation are successful
+  * `{:error, reason}` - If validation fails, with a descriptive error message
 
   ## Examples
 
@@ -211,7 +225,7 @@ defmodule GraSQL.Config do
     # Get all application config
     app_config = Application.get_all_env(:grasql)
 
-    # Only include fields that exist in Config struct to avoid errors
+    # Only include fields that exist in Config struct
     config_fields = __struct__() |> Map.keys() |> Enum.filter(&(&1 != :__struct__))
 
     # Filter app_config to only include valid config fields
@@ -237,16 +251,15 @@ defmodule GraSQL.Config do
   @doc """
   Prepares the config for passing to the Rust NIF.
 
-  Converts the configuration struct to a format compatible with the Rust native
-  implementation, including converting atom keys to strings in the operators map.
+  Converts the configuration struct to a format compatible with Rust.
 
   ## Parameters
 
-    * `config` - A valid `GraSQL.Config` struct
+  * `config` - A valid `GraSQL.Config` struct
 
   ## Returns
 
-    * A map with the same structure as the input config, but with string operator keys
+  * A map with the same structure as the input config, but with string operator keys
 
   ## Examples
 
@@ -269,13 +282,12 @@ defmodule GraSQL.Config do
   @doc """
   Generates configuration data for NIF loading.
 
-  This function is called by Rustler when the NIF is loaded and provides
-  the configuration for the native code. It loads and validates the configuration
+  Called by Rustler when the NIF is loaded. Loads and validates the configuration
   from the application environment and converts it to the native format.
 
   ## Returns
 
-    * The validated configuration in native format
+  * The validated configuration in native format
 
   ## Examples
 
@@ -359,7 +371,7 @@ defmodule GraSQL.Config do
   defp functions_implemented?(module) do
     required_functions = [
       {:resolve_table, 2},
-      {:resolve_relationship, 2}
+      {:resolve_relationship, 3}
     ]
 
     Enum.all?(

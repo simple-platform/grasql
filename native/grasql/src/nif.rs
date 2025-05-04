@@ -148,12 +148,13 @@ fn create_resolution_request_from_cached(
 ///
 /// This function generates SQL from a previously parsed GraphQL query,
 /// identified by its query ID. It also takes variables that can be used
-/// in the query.
+/// in the query and resolved schema information.
 #[rustler::nif]
 pub fn do_generate_sql<'a>(
     env: Env<'a>,
     query_id: String,
     _variables: Term<'a>,
+    _schema: Term<'a>,
 ) -> rustler::NifResult<Term<'a>> {
     // Get the current configuration
     let _config = match CONFIG.lock() {
@@ -171,8 +172,8 @@ pub fn do_generate_sql<'a>(
     };
 
     // Generate SQL using the cached query info
-    // Note: We no longer have access to ast_context and document fields,
-    // but we don't need them for SQL generation at this point
+    // Note: We're not using the schema parameter yet - this will be implemented in Phase 3
+    // For now, we just store the schema information and pass it along
     let sql = generate_sql(&cached_query_info);
 
     // Create an empty list for parameters
