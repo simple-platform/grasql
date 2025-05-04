@@ -43,5 +43,46 @@ defmodule GraSQLTest do
       result = GraSQL.generate_sql(query, variables)
       assert match?({:ok, _sql, _params}, result)
     end
+
+    test "handles schema resolution errors gracefully" do
+      # Create a defective resolver module that will raise an error
+      defmodule FailingResolver do
+        use GraSQL.SchemaResolver
+
+        @impl true
+        def resolve_table(_field_name, _ctx) do
+          raise "Simulated schema resolution error"
+        end
+
+        @impl true
+        def resolve_relationship(_field_name, _parent_table, _ctx) do
+          raise "This should not be called"
+        end
+      end
+
+      # Temporarily override the schema resolver
+      original_config = Application.get_env(:grasql, :__config__)
+
+      new_config =
+        struct(
+          GraSQL.Config,
+          Map.from_struct(original_config || %GraSQL.Config{})
+          |> Map.put(:schema_resolver, FailingResolver)
+        )
+
+      Application.put_env(:grasql, :__config__, new_config)
+
+      try do
+        query = "{ users { id } }"
+        result = GraSQL.generate_sql(query, %{})
+
+        assert {:error, error_message} = result
+        assert String.contains?(error_message, "Schema resolution error")
+        assert String.contains?(error_message, "Simulated schema resolution error")
+      after
+        # Restore the original config
+        Application.put_env(:grasql, :__config__, original_config)
+      end
+    end
   end
 end

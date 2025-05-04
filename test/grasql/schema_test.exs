@@ -122,6 +122,14 @@ defmodule GraSQL.SchemaTest do
       assert relationship.source_columns == ["id"]
       assert relationship.target_columns == ["user_id"]
       assert relationship.join_table == nil
+
+      # Verify target tables are included in the result
+      target_table_included =
+        Enum.any?(schema.tables, fn table ->
+          table.name == "articles" && table.schema == "blog"
+        end)
+
+      assert target_table_included, "Target table should be included in the tables list"
     end
 
     test "resolves a query with multiple nested relationships" do

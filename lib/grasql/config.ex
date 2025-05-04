@@ -9,7 +9,21 @@ defmodule GraSQL.Config do
   * Operator mappings between GraphQL and SQL
   * Cache settings for query optimization
   * Performance limits to prevent resource exhaustion
+
+  ## Basic Usage
+
+      # In your application configuration (config/config.exs)
+      config :grasql,
+        schema_resolver: MyApp.SchemaResolver,
+        max_query_depth: 15,
+        query_cache_max_size: 500
+
+      # In your application code
+      {:ok, config} = GraSQL.Config.load_and_validate()
   """
+
+  # Type Definitions
+  #############################################################################
 
   @typedoc """
   Supported comparison operators in GraphQL queries.
@@ -118,6 +132,9 @@ defmodule GraSQL.Config do
           schema_resolver: module()
         }
 
+  # Default Configuration
+  #############################################################################
+
   defstruct [
     # Naming conventions
     aggregate_field_suffix: "_agg",
@@ -125,20 +142,29 @@ defmodule GraSQL.Config do
 
     # Operator mappings - using standard GraphQL operator syntax
     operators: %{
+      # Logical operators
       and: "_and",
       or: "_or",
       not: "_not",
+
+      # Comparison operators
       eq: "_eq",
       neq: "_neq",
       gt: "_gt",
       lt: "_lt",
       gte: "_gte",
       lte: "_lte",
+
+      # Pattern matching
       like: "_like",
       ilike: "_ilike",
+
+      # Collection operators
       in: "_in",
       nin: "_nin",
       is_null: "_is_null",
+
+      # JSON operators
       json_contains: "_json_contains",
       json_contained_in: "_json_contained_in",
       json_has_key: "_json_has_key",
@@ -160,6 +186,9 @@ defmodule GraSQL.Config do
     # Schema resolver - default to SimpleResolver
     schema_resolver: GraSQL.SimpleResolver
   ]
+
+  # Public API
+  #############################################################################
 
   @doc """
   Validates a GraSQL configuration.
@@ -183,7 +212,7 @@ defmodule GraSQL.Config do
 
       iex> config = %GraSQL.Config{query_cache_max_size: -1, schema_resolver: GraSQL.SimpleResolver}
       iex> GraSQL.Config.validate(config)
-      {:error, "Cache settings must be non-negative integers"}
+      {:error, "Cache settings must be: query_cache_max_size > 0, query_cache_ttl_seconds ≥ 0"}
   """
   @spec validate(t()) :: {:ok, t()} | {:error, String.t()}
   def validate(%__MODULE__{} = config) do
@@ -215,10 +244,12 @@ defmodule GraSQL.Config do
 
   ## Examples
 
-      iex> Application.put_env(:grasql, :max_query_depth, 20)
-      iex> {:ok, config} = GraSQL.Config.load_and_validate()
-      iex> config.max_query_depth
-      20
+      # Configure GraSQL in your config.exs
+      config :grasql, max_query_depth: 20, schema_resolver: MyApp.SchemaResolver
+
+      # Load and validate the configuration
+      {:ok, config} = GraSQL.Config.load_and_validate()
+      config.max_query_depth  # Returns 20
   """
   @spec load_and_validate() :: {:ok, t()} | {:error, String.t()}
   def load_and_validate do
@@ -273,9 +304,18 @@ defmodule GraSQL.Config do
     # Convert atom keys to strings for Rust compatibility
     string_operators = for {k, v} <- config.operators, into: %{}, do: {Atom.to_string(k), v}
 
-    # Convert the entire struct to a plain map
+    # Convert the struct to a map with only the needed keys for Rust
     config
     |> Map.from_struct()
+    |> Map.take([
+      :aggregate_field_suffix,
+      :primary_key_argument_name,
+      :operators,
+      :query_cache_max_size,
+      :query_cache_ttl_seconds,
+      :max_query_depth,
+      :string_interner_capacity
+    ])
     |> Map.put(:operators, string_operators)
   end
 
@@ -291,6 +331,7 @@ defmodule GraSQL.Config do
 
   ## Examples
 
+      # During application initialization, the configuration is loaded
       iex> is_map(GraSQL.Config.load())
       true
   """
@@ -309,8 +350,10 @@ defmodule GraSQL.Config do
     end
   end
 
-  # Private validation functions
+  # Validation Functions
+  #############################################################################
 
+  @doc false
   defp validate_naming_conventions(config) do
     if is_binary(config.aggregate_field_suffix) and
          is_binary(config.primary_key_argument_name) do
@@ -320,6 +363,7 @@ defmodule GraSQL.Config do
     end
   end
 
+  @doc false
   defp validate_operators(config) do
     if is_map(config.operators) and
          Enum.all?(config.operators, fn {k, v} ->
@@ -331,15 +375,17 @@ defmodule GraSQL.Config do
     end
   end
 
+  @doc false
   defp validate_cache_settings(config) do
     if is_integer(config.query_cache_max_size) and config.query_cache_max_size > 0 and
          is_integer(config.query_cache_ttl_seconds) and config.query_cache_ttl_seconds >= 0 do
       :ok
     else
-      {:error, "Cache settings must be non-negative integers"}
+      {:error, "Cache settings must be: query_cache_max_size > 0, query_cache_ttl_seconds ≥ 0"}
     end
   end
 
+  @doc false
   defp validate_performance_settings(config) do
     if is_integer(config.max_query_depth) and config.max_query_depth > 0 and
          is_integer(config.string_interner_capacity) and config.string_interner_capacity > 0 do
@@ -349,6 +395,7 @@ defmodule GraSQL.Config do
     end
   end
 
+  @doc false
   defp validate_schema_resolver(config) do
     # Use SimpleResolver as default if none is configured
     resolver = config.schema_resolver || GraSQL.SimpleResolver
@@ -368,6 +415,7 @@ defmodule GraSQL.Config do
     end
   end
 
+  @doc false
   defp functions_implemented?(module) do
     required_functions = [
       {:resolve_table, 2},

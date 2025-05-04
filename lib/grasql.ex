@@ -55,6 +55,9 @@ defmodule GraSQL do
 
   alias GraSQL.Native
 
+  # Public API
+  #############################################################################
+
   @doc """
   Parse a GraphQL query string.
 
@@ -77,14 +80,17 @@ defmodule GraSQL do
 
   ## Examples
 
+      # Parse a simple query
       iex> {:ok, _id, kind, name, _req} = GraSQL.parse_query("query { users { id } }")
       iex> {kind, name}
       {:query, ""}
 
+      # Parse a named query
       iex> {:ok, _id, kind, name, _req} = GraSQL.parse_query("query GetUsers { users { id } }")
       iex> {kind, name}
       {:query, "GetUsers"}
 
+      # Handle syntax errors
       iex> {:error, error_message} = GraSQL.parse_query("query { invalid syntax")
       iex> String.contains?(error_message, "Syntax Error")
       true
@@ -121,16 +127,23 @@ defmodule GraSQL do
 
   ## Examples
 
+      # Basic query without variables
       iex> query = "query { users { id name } }"
-      iex> {:ok, _sql, params} = GraSQL.generate_sql(query, %{})
+      iex> {:ok, sql, params} = GraSQL.generate_sql(query, %{})
       iex> is_list(params)
       true
-
-      iex> query = "query($id: ID!) { user(id: $id) { name } }"
-      iex> {:ok, _sql, params} = GraSQL.generate_sql(query, %{"id" => 123})
-      iex> 123 in params
+      iex> String.contains?(sql, "SELECT")
       true
 
+      # Query with variables
+      iex> query = "query($id: ID!) { user(id: $id) { name } }"
+      iex> {:ok, sql, params} = GraSQL.generate_sql(query, %{"id" => 123})
+      iex> 123 in params
+      true
+      iex> String.contains?(sql, "WHERE")
+      true
+
+      # Handle invalid query
       iex> {:error, error_message} = GraSQL.generate_sql("invalid", %{})
       iex> String.contains?(error_message, "Syntax Error")
       true
@@ -143,10 +156,8 @@ defmodule GraSQL do
     resolver_module = config.schema_resolver
 
     with {:ok, query_id, _operation_kind, _operation_name, resolution_request} <-
-           parse_query(query) do
-      # Schema Resolution
-      schema = GraSQL.Schema.resolve(resolution_request, resolver_module, ctx)
-
+           parse_query(query),
+         {:ok, schema} <- safe_resolve_schema(resolution_request, resolver_module, ctx) do
       # SQL Generation
       case Native.generate_sql(query_id, variables, schema) do
         {:ok, sql, params} ->
@@ -158,14 +169,46 @@ defmodule GraSQL do
 
           {:ok, sql, actual_params}
 
-        error ->
-          error
+        {:error, reason} when is_binary(reason) ->
+          {:error, String.trim(reason)}
       end
     end
   end
 
-  # Private helpers
+  # Private Helper Functions
+  #############################################################################
 
+  @doc false
+  @spec safe_resolve_schema(tuple() | map(), module(), map()) ::
+          {:ok, map()} | {:error, String.t()}
+  defp safe_resolve_schema(resolution_request, resolver_module, ctx) do
+    schema = GraSQL.Schema.resolve(resolution_request, resolver_module, ctx)
+    {:ok, schema}
+  rescue
+    e in RuntimeError ->
+      {:error, "Schema resolution error: #{Exception.message(e)}"}
+
+    e in KeyError ->
+      {:error, "Schema resolution error: Invalid field reference - #{Exception.message(e)}"}
+
+    e in ArgumentError ->
+      {:error, "Schema resolution error: Invalid argument - #{Exception.message(e)}"}
+
+    e ->
+      {:error, "Unexpected schema resolution error: #{inspect(e)}"}
+  catch
+    :throw, value ->
+      {:error, "Schema resolution error (thrown value): #{inspect(value)}"}
+
+    :exit, value ->
+      {:error, "Schema resolution error (exit): #{inspect(value)}"}
+
+    kind, value ->
+      {:error, "Schema resolution error (#{kind}): #{inspect(value)}"}
+  end
+
+  @doc false
+  @spec get_current_config() :: GraSQL.Config.t()
   defp get_current_config do
     # Get the validated configuration struct that was stored during application startup
     Application.get_env(:grasql, :__config__) ||

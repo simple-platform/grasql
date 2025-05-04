@@ -9,7 +9,24 @@ defmodule GraSQL.Schema do
   * Resolution of nested fields to table relationships
   * Parallel processing of schema resolution for performance
   * Formatting of schema information for SQL generation
+
+  ## Examples
+
+      # With a properly configured resolver
+      resolution_request = %{field_names: ["users", "posts"], field_paths: [["users"], ["users", "posts"]]}
+      resolver = MyApp.SchemaResolver
+      schema = GraSQL.Schema.resolve(resolution_request, resolver)
+
+      # The returned schema contains tables, relationships and a path map for efficient access
+      %{
+        tables: [%GraSQL.Schema.Table{...}],
+        relationships: [%GraSQL.Schema.Relationship{...}],
+        path_map: %{...}
+      }
   """
+
+  # Schema Structure Definitions
+  #############################################################################
 
   defmodule Table do
     @moduledoc """
@@ -106,6 +123,9 @@ defmodule GraSQL.Schema do
     defstruct [:source_table, :target_table, :join_table, :source_columns, :target_columns, :type]
   end
 
+  # Public API
+  #############################################################################
+
   @doc """
   Resolves GraphQL field paths to database schema.
 
@@ -124,6 +144,22 @@ defmodule GraSQL.Schema do
     - `tables` - List of all resolved tables
     - `relationships` - List of all resolved relationships
     - `path_map` - Map of field paths to tables/relationships for efficient lookup
+
+  ## Examples
+
+      # Resolve a simple request with users and their posts
+      resolution_request = %{
+        field_names: ["users", "id", "name", "posts", "title"],
+        field_paths: [
+          ["users"],
+          ["users", "id"],
+          ["users", "name"],
+          ["users", "posts"],
+          ["users", "posts", "title"]
+        ]
+      }
+
+      schema = GraSQL.Schema.resolve(resolution_request, MyApp.SchemaResolver)
   """
   @spec resolve(map() | tuple(), module(), map()) :: map()
   def resolve(resolution_request, resolver, context \\ %{}) do
@@ -137,7 +173,10 @@ defmodule GraSQL.Schema do
     format_for_sql_generation(tables, relationships, field_paths)
   end
 
-  # Extract field names and paths from resolution request
+  # Resolution Request Processing
+  #############################################################################
+
+  @doc false
   @spec extract_resolution_info({atom(), list(), atom(), list()} | map()) :: {list(), list()}
   defp extract_resolution_info({:field_names, field_names, :field_paths, field_paths}) do
     # Convert paths of indices to paths of string names
@@ -150,14 +189,17 @@ defmodule GraSQL.Schema do
     {field_names, string_paths}
   end
 
-  # Add a new overload to handle resolution_request as a map
+  @doc false
   defp extract_resolution_info(resolution_request) when is_map(resolution_request) do
     field_names = Map.get(resolution_request, :field_names, [])
     field_paths = Map.get(resolution_request, :field_paths, [])
     {field_names, field_paths}
   end
 
-  # Resolve schema (tables and relationships) with parallelization
+  # Schema Resolution
+  #############################################################################
+
+  @doc false
   @spec resolve_schema(list(), list(), module(), map()) :: {map(), map()}
   defp resolve_schema(field_paths, _field_names, resolver, context) do
     # Get unique root tables to resolve
@@ -179,21 +221,41 @@ defmodule GraSQL.Schema do
     end)
   end
 
-  # Resolve root tables in parallel
+  @doc false
   @spec resolve_root_tables(list(), module(), map()) :: map()
   defp resolve_root_tables(root_table_names, resolver, context) do
     root_table_names
     |> Task.async_stream(
       fn field_name ->
-        {field_name, resolver.resolve_table(field_name, context)}
+        try do
+          {field_name, resolver.resolve_table(field_name, context)}
+        rescue
+          e ->
+            {:error, field_name, e}
+        catch
+          kind, value ->
+            {:error, field_name, {kind, value}}
+        end
       end,
       max_concurrency: System.schedulers_online()
     )
-    |> Enum.map(fn {:ok, result} -> result end)
+    |> Enum.map(fn
+      {:ok, {:error, field_name, error}} when is_exception(error) ->
+        raise "Root table resolution failed for '#{field_name}': #{Exception.message(error)}"
+
+      {:ok, {:error, field_name, {kind, value}}} ->
+        raise "Root table resolution failed for '#{field_name}': #{inspect(kind)} #{inspect(value)}"
+
+      {:ok, result} ->
+        result
+
+      {:exit, reason} ->
+        raise "Root table resolution task failed: #{inspect(reason)}"
+    end)
     |> Map.new()
   end
 
-  # Group relationship paths by their depth level
+  @doc false
   @spec group_relationship_paths_by_depth(list()) :: [{integer(), list()}]
   defp group_relationship_paths_by_depth(field_paths) do
     field_paths
@@ -211,7 +273,7 @@ defmodule GraSQL.Schema do
     |> Enum.sort_by(fn {depth, _} -> depth end)
   end
 
-  # Resolve a single level of relationships
+  @doc false
   @spec resolve_relationship_level(list(), map(), map(), module(), map()) :: {map(), map()}
   defp resolve_relationship_level(paths, tables, relationships, resolver, context) do
     # Extract unique relationship tasks for this level
@@ -221,29 +283,55 @@ defmodule GraSQL.Schema do
       |> Enum.map(fn {path, fields, _} -> {path, fields} end)
       |> Map.new()
 
-    # Resolve relationships for this level
+    # Resolve relationships for this level in parallel
     level_relationships =
       relationship_tasks
-      |> Enum.map(fn {path, {_parent_field, field_name}} ->
-        # Find parent table (either root or from a previous relationship)
-        parent_path = Enum.drop(path, -1)
-        parent_table = find_parent_table(parent_path, tables, relationships)
-
-        # Resolve the relationship
-        {path, resolver.resolve_relationship(field_name, parent_table, context)}
-      end)
       |> Task.async_stream(
-        fn {path, relationship} -> {path, relationship} end,
+        fn {path, {_parent_field, field_name}} ->
+          try do
+            # Find parent table (either root or from a previous relationship)
+            parent_path = Enum.drop(path, -1)
+            parent_table = find_parent_table(parent_path, tables, relationships)
+
+            # Resolve the relationship (doing the expensive work IN the task)
+            relationship = resolver.resolve_relationship(field_name, parent_table, context)
+            {path, relationship}
+          rescue
+            e ->
+              {:error, path, field_name, e}
+          catch
+            kind, value ->
+              {:error, path, field_name, {kind, value}}
+          end
+        end,
         max_concurrency: System.schedulers_online()
       )
-      |> Enum.map(fn {:ok, result} -> result end)
+      |> Enum.map(fn
+        {:ok, {:error, path, field_name, error}} when is_exception(error) ->
+          raise "Relationship resolution failed for '#{field_name}' at path #{inspect(path)}: #{Exception.message(error)}"
+
+        {:ok, {:error, path, field_name, {kind, value}}} ->
+          raise "Relationship resolution failed for '#{field_name}' at path #{inspect(path)}: #{inspect(kind)} #{inspect(value)}"
+
+        {:ok, result} ->
+          result
+
+        {:exit, reason} ->
+          raise "Relationship resolution task failed: #{inspect(reason)}"
+      end)
       |> Map.new()
 
+    # Add target tables to the tables map
+    updated_tables =
+      Enum.reduce(level_relationships, tables, fn {_path, rel}, acc ->
+        Map.put_new(acc, rel.target_table.name, rel.target_table)
+      end)
+
     # Return updated tables and relationships for the next level
-    {tables, Map.merge(relationships, level_relationships)}
+    {updated_tables, Map.merge(relationships, level_relationships)}
   end
 
-  # Find the parent table for a relationship
+  @doc false
   @spec find_parent_table(list(), map(), map()) :: Table.t()
   defp find_parent_table(parent_path, tables, relationships) do
     if length(parent_path) == 1 do
@@ -257,7 +345,10 @@ defmodule GraSQL.Schema do
     end
   end
 
-  # Format schema for SQL generation
+  # SQL Generation Formatting
+  #############################################################################
+
+  @doc false
   @spec format_for_sql_generation(map(), map(), list()) :: map()
   defp format_for_sql_generation(tables, relationships, _field_paths) do
     # Create a path map for O(1) lookups
@@ -271,7 +362,7 @@ defmodule GraSQL.Schema do
     }
   end
 
-  # Create a path map for O(1) lookups
+  @doc false
   @spec create_path_map(map(), map()) :: map()
   defp create_path_map(tables, relationships) do
     # Map tables by path
