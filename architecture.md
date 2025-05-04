@@ -14,8 +14,8 @@ Each phase is designed for maximum performance and minimal data transfer between
 
 ## Processing Pipeline
 
-```
-┌───────────────┐     ┌───────────────────┐     ┌───────────────┐     ┌────────────-───┐
+```text
+┌───────────────┐     ┌───────────────────┐     ┌───────────────┐     ┌───────────────┐
 │  GraphQL      │     │  Parse Query      │     │  Resolve      │     │  Generate SQL  │
 │  Query        │────▶│  (Rust NIF)       │────▶│  Schema       │────▶│  (In Progress) │
 │               │     │                   │     │  (Elixir)     │     │                │
@@ -27,6 +27,7 @@ Each phase is designed for maximum performance and minimal data transfer between
                       │  (Rust - Moka)    │     │  (Elixir)     │
                       └───────────────────┘     └───────────────┘
 ```
+
 
 ## Phase 1: Query Scanning (COMPLETE)
 
