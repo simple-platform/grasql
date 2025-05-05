@@ -97,6 +97,7 @@ defmodule GraSQL.Config do
   ### Naming conventions
   * `aggregate_field_suffix` - Suffix for aggregate field names in GraphQL
   * `primary_key_argument_name` - Parameter name for single entity queries
+  * `aggregate_nodes_field_name` - Field name for nodes in aggregate queries (default: "nodes")
 
   ### Operator mappings
   * `operators` - Map of GraphQL operator suffixes for each operator type
@@ -116,6 +117,7 @@ defmodule GraSQL.Config do
           # Naming conventions
           aggregate_field_suffix: String.t(),
           primary_key_argument_name: String.t(),
+          aggregate_nodes_field_name: String.t(),
 
           # Operator mappings
           operators: %{operator => String.t()},
@@ -139,6 +141,7 @@ defmodule GraSQL.Config do
     # Naming conventions
     aggregate_field_suffix: "_agg",
     primary_key_argument_name: "id",
+    aggregate_nodes_field_name: "nodes",
 
     # Operator mappings - using standard GraphQL operator syntax
     operators: %{
@@ -310,6 +313,7 @@ defmodule GraSQL.Config do
     |> Map.take([
       :aggregate_field_suffix,
       :primary_key_argument_name,
+      :aggregate_nodes_field_name,
       :operators,
       :query_cache_max_size,
       :query_cache_ttl_seconds,
@@ -356,7 +360,8 @@ defmodule GraSQL.Config do
   @doc false
   defp validate_naming_conventions(config) do
     if is_binary(config.aggregate_field_suffix) and
-         is_binary(config.primary_key_argument_name) do
+         is_binary(config.primary_key_argument_name) and
+         is_binary(config.aggregate_nodes_field_name) do
       :ok
     else
       {:error, "Naming convention fields must be strings"}

@@ -32,6 +32,9 @@ defmodule GraSQL.ConfigTest do
     test "rejects invalid naming conventions" do
       config = %Config{aggregate_field_suffix: :not_a_string}
       assert {:error, "Naming convention fields must be strings"} = Config.validate(config)
+
+      config = %Config{aggregate_nodes_field_name: :not_a_string}
+      assert {:error, "Naming convention fields must be strings"} = Config.validate(config)
     end
 
     test "rejects invalid max_query_depth" do
@@ -50,6 +53,12 @@ defmodule GraSQL.ConfigTest do
       assert {:error, "Naming convention fields must be strings"} =
                Config.validate(%Config{
                  primary_key_argument_name: nil
+               })
+
+      # Test with invalid aggregate_nodes_field_name
+      assert {:error, "Naming convention fields must be strings"} =
+               Config.validate(%Config{
+                 aggregate_nodes_field_name: nil
                })
     end
 
@@ -187,13 +196,15 @@ defmodule GraSQL.ConfigTest do
     test "preserves other configuration values" do
       config = %Config{
         query_cache_max_size: 2000,
-        query_cache_ttl_seconds: 7200
+        query_cache_ttl_seconds: 7200,
+        aggregate_nodes_field_name: "items"
       }
 
       native_config = Config.to_native_config(config)
 
       assert native_config.query_cache_max_size == 2000
       assert native_config.query_cache_ttl_seconds == 7200
+      assert native_config.aggregate_nodes_field_name == "items"
     end
 
     test "only passes necessary configuration to NIF, excluding module references" do
