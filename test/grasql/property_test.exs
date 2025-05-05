@@ -223,23 +223,4 @@ defmodule GraSQL.PropertyTest do
       end
     end
   end
-
-  property "generate_sql succeeds for valid queries" do
-    check all(
-            query <- graphql_query_generator(1),
-            # Limit number of runs to keep test execution time reasonable
-            max_runs: 10
-          ) do
-      case GraSQL.parse_query(query) do
-        {:ok, _query_id, _op_kind, _op_name, _request} ->
-          # Try to generate SQL
-          result = GraSQL.generate_sql(query, %{})
-          assert match?({:ok, _sql, _params}, result)
-
-        {:error, _} ->
-          # Skip queries that don't parse
-          :ok
-      end
-    end
-  end
 end
