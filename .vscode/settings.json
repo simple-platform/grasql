@@ -106,6 +106,7 @@
     "ubyte",
     "uninit",
     "usize",
+    "VARCHAR",
     "Vecs",
     "whereis",
     "writeln",

@@ -18,8 +18,12 @@ pub type SymbolId = Spur;
 pub enum GraphQLOperationKind {
     /// Query operation
     Query,
-    /// Mutation operation
-    Mutation,
+    /// Insert mutation operation
+    InsertMutation,
+    /// Update mutation operation
+    UpdateMutation,
+    /// Delete mutation operation
+    DeleteMutation,
     /// Subscription operation
     Subscription,
 }
@@ -104,6 +108,14 @@ pub struct ResolutionRequest {
     /// Set of unique field paths that need resolution
     /// Each path is a sequence of indices into field_names
     pub field_paths: HashSet<Vec<u32>>,
+
+    /// Map of table indices to column lists
+    /// The table index refers to its position in field_names
+    /// Columns are the actual column names as strings
+    pub column_map: HashMap<u32, HashSet<String>>,
+
+    /// The operation kind (needed to determine which attributes to resolve)
+    pub operation_kind: GraphQLOperationKind,
 }
 
 impl ResolutionRequest {
@@ -113,6 +125,8 @@ impl ResolutionRequest {
         ResolutionRequest {
             field_names: Vec::new(),
             field_paths: HashSet::new(),
+            column_map: HashMap::new(),
+            operation_kind: GraphQLOperationKind::Query,
         }
     }
 }
@@ -131,6 +145,9 @@ pub struct CachedQueryInfo {
 
     /// Field path index for O(1) lookup in Phase 3
     pub path_index: Option<HashMap<FieldPath, usize>>,
+
+    /// Column usage information keyed by table path
+    pub column_usage: Option<HashMap<FieldPath, HashSet<SymbolId>>>,
 }
 
 /// Convert ParsedQueryInfo to CachedQueryInfo
@@ -142,6 +159,7 @@ impl<'a> From<ParsedQueryInfo<'a>> for CachedQueryInfo {
             operation_name: info.operation_name,
             field_paths: info.field_paths,
             path_index: info.path_index,
+            column_usage: info.column_usage,
         }
     }
 }
@@ -170,6 +188,9 @@ pub struct ParsedQueryInfo<'a> {
     /// Store the document for Phase 3
     /// The document is only needed until SQL generation is complete
     pub document: Option<Arc<Document<'a>>>,
+
+    /// Column usage information keyed by table path
+    pub column_usage: Option<HashMap<FieldPath, HashSet<SymbolId>>>,
 }
 
 // Manual Debug implementation to avoid ASTContext not implementing Debug
@@ -182,6 +203,7 @@ impl<'a> fmt::Debug for ParsedQueryInfo<'a> {
             .field("path_index", &self.path_index)
             .field("ast_context", &"<ASTContext>")
             .field("document", &"<Document>")
+            .field("column_usage", &self.column_usage)
             .finish()
     }
 }
@@ -190,7 +212,9 @@ impl fmt::Display for GraphQLOperationKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             GraphQLOperationKind::Query => write!(f, "query"),
-            GraphQLOperationKind::Mutation => write!(f, "mutation"),
+            GraphQLOperationKind::InsertMutation => write!(f, "insert_mutation"),
+            GraphQLOperationKind::UpdateMutation => write!(f, "update_mutation"),
+            GraphQLOperationKind::DeleteMutation => write!(f, "delete_mutation"),
             GraphQLOperationKind::Subscription => write!(f, "subscription"),
         }
     }
@@ -202,7 +226,9 @@ impl From<graphql_query::ast::OperationKind> for GraphQLOperationKind {
     fn from(kind: graphql_query::ast::OperationKind) -> Self {
         match kind {
             graphql_query::ast::OperationKind::Query => GraphQLOperationKind::Query,
-            graphql_query::ast::OperationKind::Mutation => GraphQLOperationKind::Mutation,
+            // For mutation, the specific type will be determined later by examining the query
+            // Default to InsertMutation, will be refined during parsing
+            graphql_query::ast::OperationKind::Mutation => GraphQLOperationKind::InsertMutation,
             graphql_query::ast::OperationKind::Subscription => GraphQLOperationKind::Subscription,
         }
     }

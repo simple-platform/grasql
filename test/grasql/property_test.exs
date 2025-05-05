@@ -186,7 +186,8 @@ defmodule GraSQL.PropertyTest do
           ) do
       case GraSQL.Native.parse_query(query) do
         {:ok, _query_id, _op_kind, _op_name, resolution_request} ->
-          {_field_names_key, field_names, _field_paths_key, field_paths} = resolution_request
+          {:field_names, field_names, :field_paths, field_paths, :column_map, _column_map,
+           :operation_kind, _operation_kind} = resolution_request
 
           # Check that we have at least one field name and one field path
           assert length(field_names) > 0

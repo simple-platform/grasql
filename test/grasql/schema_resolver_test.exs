@@ -78,6 +78,75 @@ defmodule GraSQL.SchemaResolverTest do
       prefix = Map.get(ctx, :type_prefix, "")
       "#{prefix}#{String.capitalize(name)}"
     end
+
+    @impl true
+    def resolve_columns(%Table{name: "custom_users"}, _ctx) do
+      ["id", "name", "email", "created_at"]
+    end
+
+    def resolve_columns(%Table{name: "custom_posts"}, _ctx) do
+      ["id", "title", "content", "user_id", "published", "created_at"]
+    end
+
+    def resolve_columns(%Table{}, _ctx) do
+      # Default columns for all other tables
+      ["id", "name", "created_at"]
+    end
+
+    @impl true
+    def resolve_column_attribute(:sql_type, "id", _table, _ctx) do
+      "INTEGER"
+    end
+
+    def resolve_column_attribute(:sql_type, "name", _table, _ctx) do
+      "VARCHAR(100)"
+    end
+
+    def resolve_column_attribute(:sql_type, "email", _table, _ctx) do
+      "VARCHAR(255)"
+    end
+
+    def resolve_column_attribute(:sql_type, "created_at", _table, _ctx) do
+      "TIMESTAMP"
+    end
+
+    def resolve_column_attribute(:sql_type, "title", _table, _ctx) do
+      "VARCHAR(200)"
+    end
+
+    def resolve_column_attribute(:sql_type, "content", _table, _ctx) do
+      "TEXT"
+    end
+
+    def resolve_column_attribute(:sql_type, "user_id", _table, _ctx) do
+      "INTEGER"
+    end
+
+    def resolve_column_attribute(:sql_type, "published", _table, _ctx) do
+      "BOOLEAN"
+    end
+
+    def resolve_column_attribute(:sql_type, _column_name, _table, _ctx) do
+      # Default type for other columns
+      "VARCHAR(255)"
+    end
+
+    def resolve_column_attribute(:default_value, "id", _table, _ctx) do
+      nil
+    end
+
+    def resolve_column_attribute(:default_value, "created_at", _table, _ctx) do
+      "CURRENT_TIMESTAMP"
+    end
+
+    def resolve_column_attribute(:default_value, "published", _table, _ctx) do
+      false
+    end
+
+    def resolve_column_attribute(:default_value, _column_name, _table, _ctx) do
+      # Default value for other columns
+      nil
+    end
   end
 
   describe "custom schema resolver" do
@@ -150,6 +219,52 @@ defmodule GraSQL.SchemaResolverTest do
 
       assert "API_Test_table" = CustomResolver.resolve_typename(table, %{type_prefix: "API_"})
     end
+
+    test "resolve_columns/2 returns column names for tables" do
+      users_table = %Table{schema: "custom_schema", name: "custom_users"}
+      posts_table = %Table{schema: "custom_schema", name: "custom_posts"}
+      other_table = %Table{schema: "custom_schema", name: "other_table"}
+
+      assert ["id", "name", "email", "created_at"] =
+               CustomResolver.resolve_columns(users_table, %{})
+
+      assert ["id", "title", "content", "user_id", "published", "created_at"] =
+               CustomResolver.resolve_columns(posts_table, %{})
+
+      assert ["id", "name", "created_at"] = CustomResolver.resolve_columns(other_table, %{})
+    end
+
+    test "resolve_column_attribute/4 returns SQL type for columns" do
+      users_table = %Table{schema: "custom_schema", name: "custom_users"}
+
+      assert "INTEGER" =
+               CustomResolver.resolve_column_attribute(:sql_type, "id", users_table, %{})
+
+      assert "VARCHAR(100)" =
+               CustomResolver.resolve_column_attribute(:sql_type, "name", users_table, %{})
+
+      assert "VARCHAR(255)" =
+               CustomResolver.resolve_column_attribute(:sql_type, "email", users_table, %{})
+
+      assert "TIMESTAMP" =
+               CustomResolver.resolve_column_attribute(:sql_type, "created_at", users_table, %{})
+    end
+
+    test "resolve_column_attribute/4 returns default values for columns" do
+      users_table = %Table{schema: "custom_schema", name: "custom_users"}
+
+      assert is_nil(
+               CustomResolver.resolve_column_attribute(:default_value, "id", users_table, %{})
+             )
+
+      assert "CURRENT_TIMESTAMP" =
+               CustomResolver.resolve_column_attribute(
+                 :default_value,
+                 "created_at",
+                 users_table,
+                 %{}
+               )
+    end
   end
 
   describe "built-in resolvers" do
@@ -158,6 +273,8 @@ defmodule GraSQL.SchemaResolverTest do
       assert function_exported?(GraSQL.SimpleResolver, :resolve_table, 2)
       assert function_exported?(GraSQL.SimpleResolver, :resolve_relationship, 3)
       assert function_exported?(GraSQL.SimpleResolver, :resolve_typename, 2)
+      assert function_exported?(GraSQL.SimpleResolver, :resolve_columns, 2)
+      assert function_exported?(GraSQL.SimpleResolver, :resolve_column_attribute, 4)
 
       # Test basic functionality
       table = GraSQL.SimpleResolver.resolve_table("users", %{})
@@ -172,6 +289,15 @@ defmodule GraSQL.SchemaResolverTest do
       # Test typename resolution
       typename = GraSQL.SimpleResolver.resolve_typename(table, %{})
       assert typename == "Users"
+
+      # Test column resolution
+      columns = GraSQL.SimpleResolver.resolve_columns(table, %{})
+      assert is_list(columns)
+      assert "id" in columns
+
+      # Test column attribute resolution
+      sql_type = GraSQL.SimpleResolver.resolve_column_attribute(:sql_type, "id", table, %{})
+      assert sql_type == "INTEGER"
     end
   end
 
@@ -194,6 +320,20 @@ defmodule GraSQL.SchemaResolverTest do
             target_columns: ["id"],
             join_table: nil
           }
+        end
+
+        @impl true
+        def resolve_columns(_table, _ctx) do
+          ["id", "name", "created_at"]
+        end
+
+        @impl true
+        def resolve_column_attribute(:sql_type, _column_name, _table, _ctx) do
+          "TEXT"
+        end
+
+        def resolve_column_attribute(:default_value, _column_name, _table, _ctx) do
+          nil
         end
 
         # Not implementing resolve_typename is allowed (it's optional)

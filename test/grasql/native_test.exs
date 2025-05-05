@@ -19,7 +19,7 @@ defmodule GraSQL.NativeTest do
     test "parses a mutation" do
       query = "mutation CreateUser { createUser(name: \"John\") { id } }"
 
-      assert {:ok, _query_id, :mutation, "CreateUser", resolution_request} =
+      assert {:ok, _query_id, :insert_mutation, "CreateUser", resolution_request} =
                Native.parse_query(query)
 
       assert is_tuple(resolution_request) or is_map(resolution_request)
@@ -66,12 +66,9 @@ defmodule GraSQL.NativeTest do
       query = "query { users { id posts { title comments { body } } } }"
       assert {:ok, _query_id, :query, "", resolution_request} = Native.parse_query(query)
 
-      # Extract field_names and field_paths based on the resolution_request format
-      {field_names_key, field_names, field_paths_key, field_paths} = resolution_request
-
-      # Verify atom keys
-      assert field_names_key == :field_names
-      assert field_paths_key == :field_paths
+      # Extract field_names and field_paths based on the new resolution_request format
+      {:field_names, field_names, :field_paths, field_paths, :column_map, _column_map,
+       :operation_kind, _operation_kind} = resolution_request
 
       # Verify field_names is a list of strings
       assert is_list(field_names)

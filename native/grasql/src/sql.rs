@@ -35,6 +35,7 @@ pub fn generate_sql_from_full(parsed_query_info: &ParsedQueryInfo) -> String {
         operation_name: parsed_query_info.operation_name.clone(),
         field_paths: parsed_query_info.field_paths.clone(),
         path_index: parsed_query_info.path_index.clone(),
+        column_usage: parsed_query_info.column_usage.clone(),
     };
 
     generate_sql(&cached_info)
@@ -56,6 +57,7 @@ mod tests {
             path_index: Some(HashMap::new()),
             ast_context: None,
             document: None,
+            column_usage: None,
         };
 
         let sql = generate_sql_from_full(&dummy_query_info);

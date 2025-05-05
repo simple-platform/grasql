@@ -9,6 +9,52 @@ use graphql_query::ast::{ASTContext, Definition, Document, Field, ParseNode, Sel
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Determine the specific operation kind, including mutation type
+#[inline(always)]
+fn determine_operation_kind(document: &Document) -> Result<GraphQLOperationKind, String> {
+    // Find the operation first
+    let operation = document
+        .operation(None)
+        .map_err(|e| format!("Error determining operation: {}", e))?;
+
+    // If it's a mutation, determine specific type
+    if let graphql_query::ast::OperationKind::Mutation = operation.operation {
+        // Check if we have selections first
+        if operation.selection_set.selections.is_empty() {
+            return Err(String::from("Mutation has empty selection set"));
+        }
+
+        // Look at first selection name to determine mutation type
+        if let Some(selection) = operation.selection_set.selections.first() {
+            if let Some(field) = selection.field() {
+                // Get the current configuration to access prefixes
+                let config = match crate::config::CONFIG.lock() {
+                    Ok(cfg) => match &*cfg {
+                        Some(c) => c.clone(),
+                        None => return Ok(GraphQLOperationKind::InsertMutation), // Default if not initialized
+                    },
+                    Err(_) => return Ok(GraphQLOperationKind::InsertMutation), // Default if lock fails
+                };
+
+                // Check field name against configured prefixes
+                let field_name = field.name;
+                if field_name.starts_with(&config.insert_prefix) {
+                    return Ok(GraphQLOperationKind::InsertMutation);
+                } else if field_name.starts_with(&config.update_prefix) {
+                    return Ok(GraphQLOperationKind::UpdateMutation);
+                } else if field_name.starts_with(&config.delete_prefix) {
+                    return Ok(GraphQLOperationKind::DeleteMutation);
+                }
+            }
+        }
+        // Default to insert mutation if we can't determine type
+        return Ok(GraphQLOperationKind::InsertMutation);
+    }
+
+    // For non-mutation operations, convert directly
+    Ok(operation.operation.into())
+}
+
 /// Parse a GraphQL query string and extract necessary information
 ///
 /// This function parses a GraphQL query string and extracts operation information
@@ -67,28 +113,26 @@ pub fn parse_graphql(query: &str) -> Result<(ParsedQueryInfo, ResolutionRequest)
         }
     }
 
-    // Extract operation information
-    let mut operation_kind = GraphQLOperationKind::Query; // Default to query
+    // Determine operation kind (now with specific mutation types)
+    let operation_kind = determine_operation_kind(&document)?;
+
+    // Extract operation name
     let mut operation_name = None;
 
     // Find the first operation definition
     for definition in document.definitions.iter() {
         if let Definition::Operation(op) = definition {
-            operation_kind = op.operation.into();
-
             if let Some(name) = &op.name {
                 operation_name = Some(name.name.to_string());
             }
-
-            // For simplicity, we just use the first operation
             break;
         }
     }
 
-    // Extract field paths
+    // Extract field paths and column usage
     let mut extractor = FieldPathExtractor::new();
-    let field_paths = match extractor.extract(&document) {
-        Ok(paths) => paths,
+    let (field_paths, column_usage) = match extractor.extract(&document) {
+        Ok(result) => result,
         Err(e) => return Err(e),
     };
 
@@ -104,6 +148,13 @@ pub fn parse_graphql(query: &str) -> Result<(ParsedQueryInfo, ResolutionRequest)
     // Convert FieldPaths with SymbolIds to indices for Elixir
     let converted_paths = convert_paths_to_indices(&field_paths, &symbol_to_index);
 
+    // Convert column usage to table indices with column strings
+    let column_map = crate::extraction::convert_column_usage_to_indices(
+        &column_usage,
+        &field_paths,
+        &symbol_to_index,
+    );
+
     // Create parsed query info with extracted data
     let parsed_query_info = ParsedQueryInfo {
         operation_kind,
@@ -111,13 +162,16 @@ pub fn parse_graphql(query: &str) -> Result<(ParsedQueryInfo, ResolutionRequest)
         field_paths: Some(field_paths.clone()),
         path_index: Some(build_path_index(&field_paths)),
         ast_context: Some(Arc::new(ctx)),
-        document: None, // We can't easily store the document with 'static lifetime
+        document: None,
+        column_usage: Some(column_usage),
     };
 
-    // Create resolution request
+    // Create resolution request with column map
     let resolution_request = ResolutionRequest {
         field_names,
         field_paths: converted_paths,
+        column_map,
+        operation_kind,
     };
 
     Ok((parsed_query_info, resolution_request))

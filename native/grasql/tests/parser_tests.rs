@@ -19,7 +19,9 @@ fn extract_field_paths(query: &str) -> HashSet<FieldPath> {
     let ctx = ASTContext::new();
     let document = Document::parse(&ctx, query).unwrap();
     let mut extractor = FieldPathExtractor::new();
-    extractor.extract(&document).unwrap()
+    // Extract only the field paths component from the tuple
+    let (field_paths, _) = extractor.extract(&document).unwrap();
+    field_paths
 }
 
 // Test helper to check if a specific path exists in the extracted paths
