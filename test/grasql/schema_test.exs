@@ -74,6 +74,73 @@ defmodule GraSQL.SchemaTest do
         join_table: nil
       }
     end
+
+    @impl true
+    def resolve_typename(%Table{name: "users"}, _ctx) do
+      "User"
+    end
+
+    def resolve_typename(%Table{name: "articles"}, _ctx) do
+      "Article"
+    end
+
+    def resolve_typename(%Table{name: "comments"}, _ctx) do
+      "Comment"
+    end
+
+    def resolve_typename(%Table{name: name}, _ctx) do
+      String.capitalize(name)
+    end
+  end
+
+  describe "typename resolution" do
+    test "adds __typename to root tables" do
+      # Create a resolution request with users field
+      resolution_request = {:field_names, ["users"], :field_paths, [[0]]}
+
+      # Resolve schema
+      schema = Schema.resolve(resolution_request, TestResolver)
+
+      # Get the users table from the path map
+      {:table, users_table} = schema.path_map[["users"]]
+
+      # Check typename
+      assert users_table.__typename == "User"
+    end
+
+    test "adds __typename to target tables in relationships" do
+      # Create a resolution request with users and posts fields
+      resolution_request = {
+        :field_names,
+        ["users", "posts"],
+        :field_paths,
+        [[0], [0, 1]]
+      }
+
+      # Resolve schema
+      schema = Schema.resolve(resolution_request, TestResolver)
+
+      # Check path map - should have typename in relationship's target table
+      {:relationship, relationship} = schema.path_map[["users", "posts"]]
+      assert relationship.target_table.__typename == "Article"
+    end
+
+    test "adds __typename to deeply nested tables" do
+      # Create a resolution request with deeply nested relationships
+      resolution_request = {
+        :field_names,
+        ["users", "posts", "comments"],
+        :field_paths,
+        [[0], [0, 1], [0, 1, 2]]
+      }
+
+      # Resolve schema
+      schema = Schema.resolve(resolution_request, TestResolver)
+
+      # Check nested relationship target table typename
+      {:relationship, comments_rel} = schema.path_map[["users", "posts", "comments"]]
+      assert comments_rel.target_table.__typename == "Comment"
+    end
   end
 
   describe "resolve/3" do

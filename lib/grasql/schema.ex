@@ -43,13 +43,15 @@ defmodule GraSQL.Schema do
 
     * `schema` - Database schema name (e.g., "public")
     * `name` - Table name in the database
+    * `__typename` - Optional GraphQL __typename value for the table
     """
     @type t :: %__MODULE__{
             schema: String.t(),
-            name: String.t()
+            name: String.t(),
+            __typename: String.t() | nil
           }
 
-    defstruct [:schema, :name]
+    defstruct [:schema, :name, :__typename]
   end
 
   defmodule JoinTable do
@@ -228,7 +230,18 @@ defmodule GraSQL.Schema do
     |> Task.async_stream(
       fn field_name ->
         try do
-          {field_name, resolver.resolve_table(field_name, context)}
+          table = resolver.resolve_table(field_name, context)
+
+          # Set typename if resolver implements the resolve_typename callback
+          table_with_typename =
+            if function_exported?(resolver, :resolve_typename, 2) do
+              typename = resolver.resolve_typename(table, context)
+              %{table | __typename: typename}
+            else
+              table
+            end
+
+          {field_name, table_with_typename}
         rescue
           e ->
             {:error, field_name, e}
@@ -295,7 +308,18 @@ defmodule GraSQL.Schema do
 
             # Resolve the relationship (doing the expensive work IN the task)
             relationship = resolver.resolve_relationship(field_name, parent_table, context)
-            {path, relationship}
+
+            # Set typename on the target table if resolver implements resolve_typename
+            relationship_with_typename =
+              if function_exported?(resolver, :resolve_typename, 2) and relationship.target_table do
+                typename = resolver.resolve_typename(relationship.target_table, context)
+                target_with_typename = %{relationship.target_table | __typename: typename}
+                %{relationship | target_table: target_with_typename}
+              else
+                relationship
+              end
+
+            {path, relationship_with_typename}
           rescue
             e ->
               {:error, path, field_name, e}
