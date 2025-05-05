@@ -208,7 +208,7 @@ defmodule GraSQL.Schema do
     columns = resolve_columns(tables, column_map, attributes_to_resolve, resolver, context)
 
     # Format for SQL generation - operation_kind is already known by the NIF
-    format_for_sql_generation(tables, relationships, columns)
+    format_for_sql_generation(tables, relationships, columns, operation_kind)
   end
 
   # Resolution Request Processing
@@ -599,15 +599,15 @@ defmodule GraSQL.Schema do
   #############################################################################
 
   @doc false
-  @spec format_for_sql_generation(map(), map(), map()) :: map()
-  defp format_for_sql_generation(tables, relationships, columns) do
+  @spec format_for_sql_generation(map(), map(), map(), atom()) :: map()
+  defp format_for_sql_generation(tables, relationships, columns, operation_kind) do
     # Create a resolved schema for efficient lookups with columns embedded
-    create_resolved_schema(tables, relationships, columns)
+    create_resolved_schema(tables, relationships, columns, operation_kind)
   end
 
   @doc false
-  @spec create_resolved_schema(map(), map(), map()) :: map()
-  defp create_resolved_schema(tables, relationships, columns) do
+  @spec create_resolved_schema(map(), map(), map(), atom()) :: map()
+  defp create_resolved_schema(tables, relationships, columns, operation_kind) do
     # Map tables by path, including their columns as children
     table_paths =
       tables
@@ -623,7 +623,8 @@ defmodule GraSQL.Schema do
       |> Enum.map(fn {path, relationship} -> {path, {:relationship, relationship}} end)
       |> Map.new()
 
-    # Combine maps
+    # Combine maps and include operation_kind
     Map.merge(table_paths, relationship_paths)
+    |> Map.put(:operation_kind, operation_kind)
   end
 end

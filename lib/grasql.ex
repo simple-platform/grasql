@@ -96,7 +96,10 @@ defmodule GraSQL do
       true
   """
   @spec parse_query(String.t()) ::
-          {:ok, String.t(), atom(), String.t(), tuple()} | {:error, String.t()}
+          {:ok, String.t(), atom(), String.t(),
+           {:field_names, list(String.t()), :field_paths, list(list(integer())), :column_map,
+            list({integer(), list(String.t())}), :operation_kind, atom()}}
+          | {:error, String.t()}
   def parse_query(query) do
     case Native.parse_query(query) do
       {:error, reason} when is_binary(reason) -> {:error, reason |> String.trim()}

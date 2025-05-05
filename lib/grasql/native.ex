@@ -36,7 +36,7 @@ defmodule GraSQL.Native do
      - `query_id`: A unique identifier for the parsed query
      - `operation_kind`: The kind of operation (:query, :mutation, or :subscription)
      - `operation_name`: The name of the operation if provided, or empty string
-     - `resolution_request`: A map containing field names and paths that need resolution
+     - `resolution_request`: A tuple containing field names, paths, column map, and operation kind
 
   * `{:error, reason}` - If parsing fails
 
@@ -47,7 +47,10 @@ defmodule GraSQL.Native do
   * `"parser_error"` - Other parsing errors
   """
   @spec parse_query(String.t()) ::
-          {:ok, String.t(), atom(), String.t(), map() | tuple()} | {:error, String.t()}
+          {:ok, String.t(), atom(), String.t(),
+           {:field_names, list(String.t()), :field_paths, list(list(integer())), :column_map,
+            list({integer(), list(String.t())}), :operation_kind, atom()}}
+          | {:error, String.t()}
   def parse_query(query), do: do_parse_query(query)
 
   @doc """
@@ -85,7 +88,10 @@ defmodule GraSQL.Native do
   # These functions are implemented natively in Rust
   @doc false
   @spec do_parse_query(String.t()) ::
-          {:ok, String.t(), atom(), String.t(), map() | tuple()} | {:error, String.t()}
+          {:ok, String.t(), atom(), String.t(),
+           {:field_names, list(String.t()), :field_paths, list(list(integer())), :column_map,
+            list({integer(), list(String.t())}), :operation_kind, atom()}}
+          | {:error, String.t()}
   def do_parse_query(_query), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false

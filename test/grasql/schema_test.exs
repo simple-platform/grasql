@@ -160,7 +160,10 @@ defmodule GraSQL.SchemaTest do
 
   defp get_columns(schema, table_name) do
     schema
-    |> Enum.find(fn {[name], _} -> name == table_name end)
+    |> Enum.find(fn
+      {[name], _} -> name == table_name
+      {key, _} when is_atom(key) -> false
+    end)
     |> case do
       {_, {:table, %{columns: columns}}} -> columns
       _ -> []
