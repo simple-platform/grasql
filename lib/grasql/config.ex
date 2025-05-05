@@ -99,6 +99,11 @@ defmodule GraSQL.Config do
   * `primary_key_argument_name` - Parameter name for single entity queries
   * `aggregate_nodes_field_name` - Field name for nodes in aggregate queries (default: "nodes")
 
+  ### Mutation naming conventions
+  * `insert_prefix` - Prefix for insert mutation fields in GraphQL (default: "insert_")
+  * `update_prefix` - Prefix for update mutation fields in GraphQL (default: "update_")
+  * `delete_prefix` - Prefix for delete mutation fields in GraphQL (default: "delete_")
+
   ### Operator mappings
   * `operators` - Map of GraphQL operator suffixes for each operator type
 
@@ -118,6 +123,11 @@ defmodule GraSQL.Config do
           aggregate_field_suffix: String.t(),
           primary_key_argument_name: String.t(),
           aggregate_nodes_field_name: String.t(),
+
+          # Mutation naming conventions
+          insert_prefix: String.t(),
+          update_prefix: String.t(),
+          delete_prefix: String.t(),
 
           # Operator mappings
           operators: %{operator => String.t()},
@@ -142,6 +152,11 @@ defmodule GraSQL.Config do
     aggregate_field_suffix: "_agg",
     primary_key_argument_name: "id",
     aggregate_nodes_field_name: "nodes",
+
+    # Mutation naming conventions
+    insert_prefix: "insert_",
+    update_prefix: "update_",
+    delete_prefix: "delete_",
 
     # Operator mappings - using standard GraphQL operator syntax
     operators: %{
@@ -314,6 +329,9 @@ defmodule GraSQL.Config do
       :aggregate_field_suffix,
       :primary_key_argument_name,
       :aggregate_nodes_field_name,
+      :insert_prefix,
+      :update_prefix,
+      :delete_prefix,
       :operators,
       :query_cache_max_size,
       :query_cache_ttl_seconds,
@@ -361,7 +379,10 @@ defmodule GraSQL.Config do
   defp validate_naming_conventions(config) do
     if is_binary(config.aggregate_field_suffix) and
          is_binary(config.primary_key_argument_name) and
-         is_binary(config.aggregate_nodes_field_name) do
+         is_binary(config.aggregate_nodes_field_name) and
+         is_binary(config.insert_prefix) and
+         is_binary(config.update_prefix) and
+         is_binary(config.delete_prefix) do
       :ok
     else
       {:error, "Naming convention fields must be strings"}
