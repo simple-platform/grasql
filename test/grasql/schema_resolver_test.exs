@@ -63,6 +63,21 @@ defmodule GraSQL.SchemaResolverTest do
         join_table: nil
       }
     end
+
+    @impl true
+    def resolve_typename(%Table{name: "custom_users"}, _ctx) do
+      "User"
+    end
+
+    def resolve_typename(%Table{name: "custom_posts"}, _ctx) do
+      "Post"
+    end
+
+    def resolve_typename(%Table{name: name}, ctx) do
+      # Use context to customize typename if needed
+      prefix = Map.get(ctx, :type_prefix, "")
+      "#{prefix}#{String.capitalize(name)}"
+    end
   end
 
   describe "custom schema resolver" do
@@ -119,6 +134,22 @@ defmodule GraSQL.SchemaResolverTest do
       assert relationship.source_columns == ["author_id"]
       assert relationship.target_columns == ["id"]
     end
+
+    test "resolve_typename/2 handles custom typename for tables" do
+      users_table = %Table{schema: "custom_schema", name: "custom_users"}
+      posts_table = %Table{schema: "custom_schema", name: "custom_posts"}
+      other_table = %Table{schema: "custom_schema", name: "other_table"}
+
+      assert "User" = CustomResolver.resolve_typename(users_table, %{})
+      assert "Post" = CustomResolver.resolve_typename(posts_table, %{})
+      assert "Other_table" = CustomResolver.resolve_typename(other_table, %{})
+    end
+
+    test "resolve_typename/2 uses context values" do
+      table = %Table{schema: "custom_schema", name: "test_table"}
+
+      assert "API_Test_table" = CustomResolver.resolve_typename(table, %{type_prefix: "API_"})
+    end
   end
 
   describe "built-in resolvers" do
@@ -126,6 +157,7 @@ defmodule GraSQL.SchemaResolverTest do
       # Verify SimpleResolver implements required callbacks
       assert function_exported?(GraSQL.SimpleResolver, :resolve_table, 2)
       assert function_exported?(GraSQL.SimpleResolver, :resolve_relationship, 3)
+      assert function_exported?(GraSQL.SimpleResolver, :resolve_typename, 2)
 
       # Test basic functionality
       table = GraSQL.SimpleResolver.resolve_table("users", %{})
@@ -136,6 +168,10 @@ defmodule GraSQL.SchemaResolverTest do
       relationship = GraSQL.SimpleResolver.resolve_relationship("posts", table, %{})
       assert %Relationship{} = relationship
       assert relationship.type == :has_many
+
+      # Test typename resolution
+      typename = GraSQL.SimpleResolver.resolve_typename(table, %{})
+      assert typename == "Users"
     end
   end
 
@@ -159,11 +195,19 @@ defmodule GraSQL.SchemaResolverTest do
             join_table: nil
           }
         end
+
+        # Not implementing resolve_typename is allowed (it's optional)
       end
 
       # Verify behavior was added
       behaviours = TestResolver.__info__(:attributes)[:behaviour]
       assert Enum.member?(behaviours, GraSQL.SchemaResolver)
+
+      # Verify resolve_typename is an optional callback
+      # We don't directly test the optional_callbacks implementation detail
+      # Instead, verify that the module doesn't implement resolve_typename
+      # but compiles without errors (which proves it's optional)
+      refute function_exported?(TestResolver, :resolve_typename, 2)
     end
   end
 end

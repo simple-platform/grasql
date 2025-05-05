@@ -11,6 +11,7 @@ defmodule GraSQL.SimpleResolver do
   * Tables are assumed to be in the "public" schema
   * Relationships use "id" as the source column
   * Target tables use "{parent_table_name}_id" as the foreign key
+  * GraphQL __typename is the table name with first letter capitalized
 
   For production use, implement your own resolver that provides
   actual database schema information.
@@ -92,5 +93,32 @@ defmodule GraSQL.SimpleResolver do
       type: :has_many,
       join_table: nil
     }
+  end
+
+  @impl true
+  @doc """
+  Resolves the GraphQL __typename for a database table.
+
+  Uses a simple convention: the table name with the first letter capitalized.
+
+  ## Parameters
+
+  * `table` - The resolved database table
+  * `_ctx` - Ignored context parameter
+
+  ## Returns
+
+  * A string representing the GraphQL type name
+
+  ## Examples
+
+      iex> table = %GraSQL.Schema.Table{schema: "public", name: "users"}
+      iex> GraSQL.SimpleResolver.resolve_typename(table, %{})
+      "Users"
+  """
+  @spec resolve_typename(GraSQL.Schema.Table.t(), map()) :: String.t()
+  def resolve_typename(%GraSQL.Schema.Table{name: name}, _ctx) do
+    # Simple implementation: capitalize the first letter of the table name
+    String.capitalize(name)
   end
 end

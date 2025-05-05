@@ -17,6 +17,9 @@ pub struct Config {
     /// Argument name used for primary key in single record queries
     pub primary_key_argument_name: String,
 
+    /// Field name for nodes in aggregate queries
+    pub aggregate_nodes_field_name: String,
+
     /// Operator mappings from GraphQL to SQL
     pub operators: HashMap<String, String>,
 
