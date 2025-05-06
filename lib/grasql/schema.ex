@@ -17,11 +17,16 @@ defmodule GraSQL.Schema do
       resolver = MyApp.SchemaResolver
       schema = GraSQL.Schema.resolve(resolution_request, resolver)
 
-      # The returned schema contains tables, relationships and a path map for efficient access
+      # The returned schema maps field paths to tables (with columns) and relationships
       %{
-        tables: [%GraSQL.Schema.Table{...}],
-        relationships: [%GraSQL.Schema.Relationship{...}],
-        path_map: %{...}
+        ["users"] => {:table, %{
+          table: %GraSQL.Schema.Table{schema: "public", name: "users", __typename: "User"},
+          columns: [
+            %GraSQL.Schema.Column{name: "id", sql_type: "INTEGER", default_value: nil},
+            %GraSQL.Schema.Column{name: "name", sql_type: "VARCHAR(100)", default_value: nil}
+          ]
+        }},
+        ["users", "posts"] => {:relationship, %GraSQL.Schema.Relationship{...}}
       }
   """
 
@@ -125,6 +130,31 @@ defmodule GraSQL.Schema do
     defstruct [:source_table, :target_table, :join_table, :source_columns, :target_columns, :type]
   end
 
+  defmodule Column do
+    @moduledoc """
+    Represents a database column with its attributes.
+
+    Contains the SQL type and default value information needed for
+    generating appropriate SQL queries.
+    """
+
+    @typedoc """
+    Column schema information.
+
+    ## Fields
+    * `name` - Column name in the database
+    * `sql_type` - SQL data type of the column
+    * `default_value` - Default value for the column (if any)
+    """
+    @type t :: %__MODULE__{
+            name: String.t(),
+            sql_type: String.t(),
+            default_value: any()
+          }
+
+    defstruct [:name, :sql_type, :default_value]
+  end
+
   # Public API
   #############################################################################
 
@@ -142,10 +172,9 @@ defmodule GraSQL.Schema do
 
   ## Returns
 
-  * A map with the following keys:
-    - `tables` - List of all resolved tables
-    - `relationships` - List of all resolved relationships
-    - `path_map` - Map of field paths to tables/relationships for efficient lookup
+  * A map of field paths to their resolved schema elements:
+    - Tables with their associated columns: `{:table, %{table: table, columns: [column, ...]}}`
+    - Relationships: `{:relationship, relationship}`
 
   ## Examples
 
@@ -165,22 +194,36 @@ defmodule GraSQL.Schema do
   """
   @spec resolve(map() | tuple(), module(), map()) :: map()
   def resolve(resolution_request, resolver, context \\ %{}) do
-    # Extract field names and paths
-    {field_names, field_paths} = extract_resolution_info(resolution_request)
+    # Extract field names, paths, column map, and operation kind
+    {field_names, field_paths, column_map, operation_kind} =
+      extract_resolution_info(resolution_request)
 
     # Process tables and relationships
     {tables, relationships} = resolve_schema(field_paths, field_names, resolver, context)
 
-    # Format for SQL generation
-    format_for_sql_generation(tables, relationships, field_paths)
+    # Determine which attributes need to be resolved based on operation type
+    attributes_to_resolve = attributes_for_operation(operation_kind)
+
+    # Process columns with parallel attribute resolution
+    columns = resolve_columns(tables, column_map, attributes_to_resolve, resolver, context)
+
+    # Format for SQL generation - operation_kind is already known by the NIF
+    format_for_sql_generation(tables, relationships, columns, operation_kind)
   end
 
   # Resolution Request Processing
   #############################################################################
 
   @doc false
-  @spec extract_resolution_info({atom(), list(), atom(), list()} | map()) :: {list(), list()}
-  defp extract_resolution_info({:field_names, field_names, :field_paths, field_paths}) do
+  @spec extract_resolution_info(
+          {atom(), list(), atom(), list(), atom(), list(), atom(), atom()}
+          | {atom(), list(), atom(), list()}
+          | map()
+        ) :: {list(), list(), map(), atom()}
+  defp extract_resolution_info(
+         {:field_names, field_names, :field_paths, field_paths, :column_map, column_map,
+          :operation_kind, operation_kind}
+       ) do
     # Convert paths of indices to paths of string names
     string_paths =
       field_paths
@@ -188,14 +231,48 @@ defmodule GraSQL.Schema do
         Enum.map(path, fn index -> Enum.at(field_names, index) end)
       end)
 
-    {field_names, string_paths}
+    # Convert column_map from {table_idx, [column_names]} to {table_name, [column_names]}
+    table_columns =
+      column_map
+      |> Enum.reduce(%{}, fn {table_idx, column_names}, acc ->
+        table_name = Enum.at(field_names, table_idx)
+        Map.put(acc, table_name, column_names)
+      end)
+
+    {field_names, string_paths, table_columns, operation_kind}
+  end
+
+  # Add fallback for backward compatibility
+  @doc false
+  defp extract_resolution_info({:field_names, field_names, :field_paths, field_paths}) do
+    # Existing implementation for older format
+    string_paths =
+      field_paths
+      |> Enum.map(fn path ->
+        Enum.map(path, fn index -> Enum.at(field_names, index) end)
+      end)
+
+    # Default empty column map and query operation
+    {field_names, string_paths, %{}, :query}
   end
 
   @doc false
   defp extract_resolution_info(resolution_request) when is_map(resolution_request) do
     field_names = Map.get(resolution_request, :field_names, [])
     field_paths = Map.get(resolution_request, :field_paths, [])
-    {field_names, field_paths}
+    # Default empty column map and query operation
+    {field_names, field_paths, %{}, :query}
+  end
+
+  @doc false
+  @spec attributes_for_operation(atom()) :: list(atom())
+  defp attributes_for_operation(operation_kind) do
+    case operation_kind do
+      :insert_mutation -> [:sql_type, :default_value]
+      :update_mutation -> [:sql_type, :default_value]
+      # For queries and deletes, we only need SQL type
+      _ -> [:sql_type]
+    end
   end
 
   # Schema Resolution
@@ -221,6 +298,155 @@ defmodule GraSQL.Schema do
                                                                     {tables, relationships} ->
       resolve_relationship_level(paths, tables, relationships, resolver, context)
     end)
+  end
+
+  @doc false
+  @spec resolve_columns(map(), map(), list(atom()), module(), map()) :: map()
+  defp resolve_columns(tables, column_map, attributes_to_resolve, resolver, context) do
+    # Process tables in parallel
+    tables
+    |> Task.async_stream(
+      fn {table_name, table} ->
+        process_table_columns(
+          table_name,
+          table,
+          column_map,
+          attributes_to_resolve,
+          resolver,
+          context
+        )
+      end,
+      max_concurrency: System.schedulers_online()
+    )
+    |> Enum.map(fn {:ok, result} -> result end)
+    |> Map.new()
+  end
+
+  @doc false
+  @spec process_table_columns(
+          String.t(),
+          GraSQL.Schema.Table.t(),
+          map(),
+          list(atom()),
+          module(),
+          map()
+        ) :: {String.t(), list()}
+  defp process_table_columns(
+         table_name,
+         table,
+         column_map,
+         attributes_to_resolve,
+         resolver,
+         context
+       ) do
+    # Only resolve if table has columns to resolve
+    case Map.get(column_map, table_name) do
+      nil ->
+        {table_name, []}
+
+      requested_columns ->
+        # Get all available columns for this table
+        all_columns = resolver.resolve_columns(table, context)
+
+        # Get relevant columns (intersection of requested and all available)
+        columns_to_resolve =
+          requested_columns
+          |> Enum.filter(fn column -> column in all_columns end)
+
+        # Determine if we should use parallel resolution
+        column_details =
+          if length(columns_to_resolve) > 10 do
+            # Use parallel resolution for many columns
+            resolve_columns_parallel(
+              columns_to_resolve,
+              table,
+              attributes_to_resolve,
+              resolver,
+              context
+            )
+          else
+            # Use sequential resolution for few columns
+            resolve_columns_sequential(
+              columns_to_resolve,
+              table,
+              attributes_to_resolve,
+              resolver,
+              context
+            )
+          end
+
+        {table_name, column_details}
+    end
+  end
+
+  @doc false
+  @spec resolve_columns_parallel(
+          list(String.t()),
+          GraSQL.Schema.Table.t(),
+          list(atom()),
+          module(),
+          map()
+        ) :: list(GraSQL.Schema.Column.t())
+  defp resolve_columns_parallel(columns, table, attributes_to_resolve, resolver, context) do
+    columns
+    |> Task.async_stream(
+      fn column_name ->
+        resolve_column_with_attributes(
+          column_name,
+          table,
+          attributes_to_resolve,
+          resolver,
+          context
+        )
+      end,
+      max_concurrency: System.schedulers_online()
+    )
+    |> Enum.map(fn {:ok, column} -> column end)
+  end
+
+  @doc false
+  @spec resolve_columns_sequential(
+          list(String.t()),
+          GraSQL.Schema.Table.t(),
+          list(atom()),
+          module(),
+          map()
+        ) :: list(GraSQL.Schema.Column.t())
+  defp resolve_columns_sequential(columns, table, attributes_to_resolve, resolver, context) do
+    Enum.map(columns, fn column_name ->
+      resolve_column_with_attributes(column_name, table, attributes_to_resolve, resolver, context)
+    end)
+  end
+
+  @doc false
+  @spec resolve_column_with_attributes(
+          String.t(),
+          GraSQL.Schema.Table.t(),
+          list(atom()),
+          module(),
+          map()
+        ) :: GraSQL.Schema.Column.t()
+  defp resolve_column_with_attributes(
+         column_name,
+         table,
+         attributes_to_resolve,
+         resolver,
+         context
+       ) do
+    # For each attribute, make a separate resolver call
+    attributes =
+      attributes_to_resolve
+      |> Enum.map(fn attribute ->
+        {attribute, resolver.resolve_column_attribute(attribute, column_name, table, context)}
+      end)
+      |> Map.new()
+
+    # Construct column struct with resolved attributes
+    %GraSQL.Schema.Column{
+      name: column_name,
+      sql_type: attributes[:sql_type],
+      default_value: attributes[:default_value]
+    }
   end
 
   @doc false
@@ -373,26 +599,22 @@ defmodule GraSQL.Schema do
   #############################################################################
 
   @doc false
-  @spec format_for_sql_generation(map(), map(), list()) :: map()
-  defp format_for_sql_generation(tables, relationships, _field_paths) do
-    # Create a path map for O(1) lookups
-    path_map = create_path_map(tables, relationships)
-
-    # Return a minimalist structure for SQL generation
-    %{
-      tables: Map.values(tables),
-      relationships: Map.values(relationships),
-      path_map: path_map
-    }
+  @spec format_for_sql_generation(map(), map(), map(), atom()) :: map()
+  defp format_for_sql_generation(tables, relationships, columns, operation_kind) do
+    # Create a resolved schema for efficient lookups with columns embedded
+    create_resolved_schema(tables, relationships, columns, operation_kind)
   end
 
   @doc false
-  @spec create_path_map(map(), map()) :: map()
-  defp create_path_map(tables, relationships) do
-    # Map tables by path
+  @spec create_resolved_schema(map(), map(), map(), atom()) :: map()
+  defp create_resolved_schema(tables, relationships, columns, operation_kind) do
+    # Map tables by path, including their columns as children
     table_paths =
       tables
-      |> Enum.map(fn {field_name, table} -> {[field_name], {:table, table}} end)
+      |> Enum.map(fn {field_name, table} ->
+        table_columns = Map.get(columns, field_name, [])
+        {[field_name], {:table, %{table: table, columns: table_columns}}}
+      end)
       |> Map.new()
 
     # Map relationships by path
@@ -401,7 +623,8 @@ defmodule GraSQL.Schema do
       |> Enum.map(fn {path, relationship} -> {path, {:relationship, relationship}} end)
       |> Map.new()
 
-    # Combine maps
+    # Combine maps and include operation_kind
     Map.merge(table_paths, relationship_paths)
+    |> Map.put(:operation_kind, operation_kind)
   end
 end

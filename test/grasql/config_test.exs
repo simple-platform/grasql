@@ -60,6 +60,22 @@ defmodule GraSQL.ConfigTest do
                Config.validate(%Config{
                  aggregate_nodes_field_name: nil
                })
+
+      # Test with invalid mutation prefixes
+      assert {:error, "Naming convention fields must be strings"} =
+               Config.validate(%Config{
+                 insert_prefix: nil
+               })
+
+      assert {:error, "Naming convention fields must be strings"} =
+               Config.validate(%Config{
+                 update_prefix: nil
+               })
+
+      assert {:error, "Naming convention fields must be strings"} =
+               Config.validate(%Config{
+                 delete_prefix: nil
+               })
     end
 
     test "validates operators" do
@@ -197,7 +213,10 @@ defmodule GraSQL.ConfigTest do
       config = %Config{
         query_cache_max_size: 2000,
         query_cache_ttl_seconds: 7200,
-        aggregate_nodes_field_name: "items"
+        aggregate_nodes_field_name: "items",
+        insert_prefix: "add_",
+        update_prefix: "modify_",
+        delete_prefix: "remove_"
       }
 
       native_config = Config.to_native_config(config)
@@ -205,6 +224,9 @@ defmodule GraSQL.ConfigTest do
       assert native_config.query_cache_max_size == 2000
       assert native_config.query_cache_ttl_seconds == 7200
       assert native_config.aggregate_nodes_field_name == "items"
+      assert native_config.insert_prefix == "add_"
+      assert native_config.update_prefix == "modify_"
+      assert native_config.delete_prefix == "remove_"
     end
 
     test "only passes necessary configuration to NIF, excluding module references" do

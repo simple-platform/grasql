@@ -10,6 +10,14 @@ defmodule GraSQL.SimpleResolver do
 
   @behaviour GraSQL.SchemaResolver
 
+  # Column type mappings for easier lookup
+  @text_columns ["description", "content", "body"]
+  @status_columns ["status", "state"]
+  @password_columns ["password", "password_hash"]
+  @varchar_255_columns ["email"]
+  @varchar_100_columns ["username"]
+  @varchar_200_columns ["title", "name"]
+
   # Column type mappings using a map for direct lookups
   @column_types %{
     "description" => "TEXT",

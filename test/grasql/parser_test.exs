@@ -8,9 +8,8 @@ defmodule GraSQL.ParserTest do
       assert {:ok, _query_id, :query, "", resolution_request} = GraSQL.Native.parse_query(query)
 
       # Extract resolution request fields
-      {field_names_key, field_names, field_paths_key, field_paths} = resolution_request
-      assert field_names_key == :field_names
-      assert field_paths_key == :field_paths
+      {:field_names, field_names, :field_paths, field_paths, :column_map, _column_map,
+       :operation_kind, _operation_kind} = resolution_request
 
       # Verify expected field names and paths
       assert Enum.member?(field_names, "users")
@@ -24,7 +23,9 @@ defmodule GraSQL.ParserTest do
       assert {:ok, _query_id, :query, "GetUsers", resolution_request} =
                GraSQL.Native.parse_query(query)
 
-      {_field_names_key, field_names, _field_paths_key, field_paths} = resolution_request
+      {:field_names, field_names, :field_paths, field_paths, :column_map, _column_map,
+       :operation_kind, _operation_kind} = resolution_request
+
       assert Enum.member?(field_names, "users")
       assert is_list(field_paths)
       assert length(field_paths) >= 1
@@ -52,7 +53,8 @@ defmodule GraSQL.ParserTest do
 
       assert {:ok, _query_id, :query, "", resolution_request} = GraSQL.Native.parse_query(query)
 
-      {_field_names_key, field_names, _field_paths_key, field_paths} = resolution_request
+      {:field_names, field_names, :field_paths, field_paths, :column_map, _column_map,
+       :operation_kind, _operation_kind} = resolution_request
 
       # Verify all expected field names
       ["users", "profile", "settings", "posts"]
@@ -98,7 +100,8 @@ defmodule GraSQL.ParserTest do
 
       assert {:ok, _query_id, :query, "", resolution_request} = GraSQL.Native.parse_query(query)
 
-      {_field_names_key, field_names, _field_paths_key, field_paths} = resolution_request
+      {:field_names, field_names, :field_paths, field_paths, :column_map, _column_map,
+       :operation_kind, _operation_kind} = resolution_request
 
       # Verify all expected field names
       ["organizations", "departments", "teams", "projects", "tasks", "subtasks", "assignee"]
@@ -159,7 +162,8 @@ defmodule GraSQL.ParserTest do
 
       assert {:ok, _query_id, :query, "", resolution_request} = GraSQL.Native.parse_query(query)
 
-      {_field_names_key, field_names, _field_paths_key, _field_paths} = resolution_request
+      {:field_names, field_names, :field_paths, _field_paths, :column_map, _column_map,
+       :operation_kind, _operation_kind} = resolution_request
 
       # Verify profile field is extracted from filter
       assert Enum.member?(field_names, "profile")
@@ -190,7 +194,8 @@ defmodule GraSQL.ParserTest do
 
       assert {:ok, _query_id, :query, "", resolution_request} = GraSQL.Native.parse_query(query)
 
-      {_field_names_key, field_names, _field_paths_key, _field_paths} = resolution_request
+      {:field_names, field_names, :field_paths, _field_paths, :column_map, _column_map,
+       :operation_kind, _operation_kind} = resolution_request
 
       # Verify aggregate field names
       assert Enum.member?(field_names, "users_aggregate")
@@ -231,10 +236,11 @@ defmodule GraSQL.ParserTest do
       }
       """
 
-      assert {:ok, _query_id, :mutation, "CreateUsers", resolution_request} =
+      assert {:ok, _query_id, :insert_mutation, "CreateUsers", resolution_request} =
                GraSQL.Native.parse_query(query)
 
-      {_field_names_key, field_names, _field_paths_key, _field_paths} = resolution_request
+      {:field_names, field_names, :field_paths, _field_paths, :column_map, _column_map,
+       :operation_kind, _operation_kind} = resolution_request
 
       # Verify insert_users and returning paths
       assert Enum.member?(field_names, "insert_users")
@@ -276,7 +282,8 @@ defmodule GraSQL.ParserTest do
 
       assert {:ok, _query_id, :query, "", resolution_request} = GraSQL.Native.parse_query(query)
 
-      {_field_names_key, field_names, _field_paths_key, _field_paths} = resolution_request
+      {:field_names, field_names, :field_paths, _field_paths, :column_map, _column_map,
+       :operation_kind, _operation_kind} = resolution_request
 
       # Aliases should be handled correctly with the original field names extracted
       assert Enum.member?(field_names, "users")
@@ -319,7 +326,8 @@ defmodule GraSQL.ParserTest do
 
       assert {:ok, _query_id, :query, "", resolution_request} = GraSQL.Native.parse_query(query)
 
-      {_field_names_key, field_names, _field_paths_key, field_paths} = resolution_request
+      {:field_names, field_names, :field_paths, field_paths, :column_map, _column_map,
+       :operation_kind, _operation_kind} = resolution_request
 
       # Verify complex nested fields are extracted
       ["users", "posts", "comments_aggregate", "profile"]

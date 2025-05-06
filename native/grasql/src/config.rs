@@ -20,6 +20,15 @@ pub struct Config {
     /// Field name for nodes in aggregate queries
     pub aggregate_nodes_field_name: String,
 
+    /// Prefix for insert mutation fields in GraphQL
+    pub insert_prefix: String,
+
+    /// Prefix for update mutation fields in GraphQL
+    pub update_prefix: String,
+
+    /// Prefix for delete mutation fields in GraphQL
+    pub delete_prefix: String,
+
     /// Operator mappings from GraphQL to SQL
     pub operators: HashMap<String, String>,
 

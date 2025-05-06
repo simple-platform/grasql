@@ -7,6 +7,10 @@ edition = "2021"
 name = "grasql"
 crate-type = ["cdylib", "rlib"]
 
+[features]
+# Feature for test utilities that need to be available to integration tests
+test-utils = []
+
 [dependencies]
 rustler = "0.36.1"
 graphql-query = "1.0.0"

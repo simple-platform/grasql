@@ -103,6 +103,60 @@ defmodule GraSQL.SchemaResolver do
             ) :: GraSQL.Schema.Relationship.t()
 
   @doc """
+  Returns a list of column names for a table.
+
+  ## Parameters
+    * `table` - The resolved database table
+    * `context` - Optional context map with user/tenant information
+
+  ## Returns
+    A list of column names
+
+  ## Example
+
+  ```elixir
+  def resolve_columns(%GraSQL.Schema.Table{name: "users"}, _context) do
+    ["id", "username", "email", "created_at"]
+  end
+  ```
+  """
+  @callback resolve_columns(
+              table :: GraSQL.Schema.Table.t(),
+              context :: map()
+            ) :: list(String.t())
+
+  @doc """
+  Resolves a specific attribute for a column.
+
+  ## Parameters
+    * `attribute` - The attribute to resolve (:sql_type, :default_value)
+    * `column_name` - The name of the column
+    * `table` - The resolved database table containing the column
+    * `context` - Optional context map with user/tenant information
+
+  ## Returns
+    The resolved attribute value
+
+  ## Example
+
+  ```elixir
+  def resolve_column_attribute(:sql_type, "id", %GraSQL.Schema.Table{name: "users"}, _context) do
+    "INTEGER"
+  end
+
+  def resolve_column_attribute(:default_value, "created_at", %GraSQL.Schema.Table{name: "users"}, _context) do
+    "CURRENT_TIMESTAMP"
+  end
+  ```
+  """
+  @callback resolve_column_attribute(
+              attribute :: atom(),
+              column_name :: String.t(),
+              table :: GraSQL.Schema.Table.t(),
+              context :: map()
+            ) :: any()
+
+  @doc """
   Resolves the GraphQL __typename for a database table.
 
   Determines what GraphQL type name should be used for a given database table.

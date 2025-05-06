@@ -11,6 +11,10 @@ pub struct FieldPathExtractor {
 
     /// Current path being built during traversal
     current_path: FieldPath,
+
+    /// Map of table paths to column sets
+    /// This tracks column usage per table
+    column_usage: HashMap<FieldPath, HashSet<SymbolId>>,
 }
 
 impl FieldPathExtractor {
@@ -20,12 +24,16 @@ impl FieldPathExtractor {
         FieldPathExtractor {
             field_paths: HashSet::new(),
             current_path: FieldPath::new(),
+            column_usage: HashMap::new(),
         }
     }
 
     /// Extract field paths from a GraphQL document
     #[inline(always)]
-    pub fn extract(&mut self, document: &Document) -> Result<HashSet<FieldPath>, String> {
+    pub fn extract(
+        &mut self,
+        document: &Document,
+    ) -> Result<(HashSet<FieldPath>, HashMap<FieldPath, HashSet<SymbolId>>), String> {
         // Find the operation
         let operation = document
             .operation(None)
@@ -40,7 +48,13 @@ impl FieldPathExtractor {
         // Extract tables/relationships from filters
         self.extract_filter_paths(operation)?;
 
-        Ok(std::mem::take(&mut self.field_paths))
+        // Extract columns from selection sets
+        self.extract_columns_from_selection_sets(operation)?;
+
+        Ok((
+            std::mem::take(&mut self.field_paths),
+            std::mem::take(&mut self.column_usage),
+        ))
     }
 
     /// Extract tables/relationships from filter expressions
@@ -55,6 +69,66 @@ impl FieldPathExtractor {
                 self.process_field_arguments(field)?;
             }
         }
+
+        Ok(())
+    }
+
+    /// Extract columns from selection sets
+    #[inline(always)]
+    fn extract_columns_from_selection_sets(
+        &mut self,
+        operation: &OperationDefinition,
+    ) -> Result<(), String> {
+        for selection in &operation.selection_set.selections {
+            if let Some(field) = selection.field() {
+                // Start with empty path for root fields
+                self.current_path.clear();
+
+                // Process field and its columns recursively
+                self.process_field_and_columns(field)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Process a field and its columns recursively
+    #[inline(always)]
+    fn process_field_and_columns(&mut self, field: &Field) -> Result<(), String> {
+        // Add current field to path
+        let field_id = intern_str(field.name);
+        self.current_path.push(field_id);
+
+        // Only process fields with selection sets (tables/relationships)
+        if !field.selection_set.is_empty() {
+            // Store this path as a table/relationship
+            self.field_paths.insert(self.current_path.clone());
+
+            // Process child fields (columns or nested relationships)
+            for selection in &field.selection_set.selections {
+                if let Some(child_field) = selection.field() {
+                    if child_field.selection_set.is_empty() {
+                        // This is a column
+                        let column_id = intern_str(child_field.name);
+
+                        // Get or create the column set for this table
+                        let columns = self
+                            .column_usage
+                            .entry(self.current_path.clone())
+                            .or_insert_with(HashSet::new);
+
+                        // Add this column to the set
+                        columns.insert(column_id);
+                    } else {
+                        // This is a nested relationship, process recursively
+                        self.process_field_and_columns(child_field)?;
+                    }
+                }
+            }
+        }
+
+        // Remove field from path before returning
+        self.current_path.pop();
 
         Ok(())
     }
@@ -205,6 +279,61 @@ pub fn convert_paths_to_indices(
         .collect()
 }
 
+/// Convert column usage from FieldPath/SymbolId format to table indices with column strings
+///
+/// This function takes:
+/// - column_usage: Map of table paths to column symbol IDs
+/// - field_paths: Set of all field paths
+/// - path_to_index: Map from field paths to their indices
+/// - all_strings: Map from symbol IDs to their string representations
+///
+/// Returns a map from table indices to sets of column names
+#[inline(always)]
+pub fn convert_column_usage_to_indices(
+    column_usage: &HashMap<FieldPath, HashSet<SymbolId>>,
+    field_paths: &HashSet<FieldPath>,
+    symbol_to_index: &HashMap<SymbolId, u32>,
+) -> HashMap<u32, HashSet<String>> {
+    let mut result = HashMap::new();
+
+    // Create a map from FieldPath to index
+    let mut path_to_index = HashMap::with_capacity(field_paths.len());
+    for path in field_paths {
+        let index_vec = path
+            .iter()
+            .map(|symbol_id| *symbol_to_index.get(symbol_id).unwrap())
+            .collect::<Vec<u32>>();
+
+        // Use the first element of index_vec as the table index
+        if !index_vec.is_empty() {
+            path_to_index.insert(path.clone(), index_vec[0]);
+        }
+    }
+
+    // Convert column usage to table indices with column strings
+    for (path, columns) in column_usage {
+        // Only process paths that represent tables
+        if let Some(&table_idx) = path_to_index.get(path) {
+            // Convert column SymbolIds to strings
+            let column_strings = columns
+                .iter()
+                .filter_map(|symbol_id| {
+                    // Using intern_str creates a circular dependency,
+                    // so we rely on the caller to provide string mapping
+                    crate::interning::resolve_str(*symbol_id)
+                })
+                .collect::<HashSet<_>>();
+
+            // Only add if there are columns to resolve
+            if !column_strings.is_empty() {
+                result.insert(table_idx, column_strings);
+            }
+        }
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -218,7 +347,7 @@ mod tests {
         let document = Document::parse(&ctx, query).unwrap();
 
         let mut extractor = FieldPathExtractor::new();
-        let field_paths = extractor.extract(&document).unwrap();
+        let (field_paths, _column_usage) = extractor.extract(&document).unwrap();
 
         // Should only have "users" path since it's the only table
         assert_eq!(field_paths.len(), 1);
@@ -237,7 +366,7 @@ mod tests {
         let document = Document::parse(&ctx, query).unwrap();
 
         let mut extractor = FieldPathExtractor::new();
-        let field_paths = extractor.extract(&document).unwrap();
+        let (field_paths, _column_usage) = extractor.extract(&document).unwrap();
 
         // Should have "users", "users.profile", and "users.posts" paths
         assert_eq!(field_paths.len(), 3);
@@ -269,7 +398,7 @@ mod tests {
         let document = Document::parse(&ctx, query).unwrap();
 
         let mut extractor = FieldPathExtractor::new();
-        let field_paths = extractor.extract(&document).unwrap();
+        let (field_paths, _column_usage) = extractor.extract(&document).unwrap();
 
         // Should have "users" and "users.profile" paths
         assert_eq!(field_paths.len(), 2);

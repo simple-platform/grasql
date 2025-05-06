@@ -101,16 +101,40 @@ fn convert_resolution_request_to_elixir<'a>(
     // Convert HashSet to Vec before encoding
     let field_paths_vec: Vec<Vec<u32>> = request.field_paths.iter().cloned().collect();
 
-    // Create a tuple of {:field_names, field_names, :field_paths, field_paths}
-    let result = (
-        atoms::field_names(),
-        request.field_names.clone(),
-        atoms::field_paths(),
-        field_paths_vec,
-    )
-        .encode(env);
+    // Convert HashMap<u32, HashSet<String>> to Vec<(u32, Vec<String>)> for encoding
+    let column_map_vec: Vec<(u32, Vec<String>)> = request
+        .column_map
+        .iter()
+        .map(|(&table_idx, columns)| (table_idx, columns.iter().cloned().collect::<Vec<String>>()))
+        .collect();
 
-    Ok(result)
+    // Get operation kind atom
+    let op_kind_atom = atoms::operation_kind_to_atom(request.operation_kind);
+
+    // Create individual terms
+    let field_names_atom = atoms::field_names().encode(env);
+    let field_names_term = request.field_names.encode(env);
+    let field_paths_atom = atoms::field_paths().encode(env);
+    let field_paths_term = field_paths_vec.encode(env);
+    let column_map_atom = atoms::column_map().encode(env);
+    let column_map_term = column_map_vec.encode(env);
+    let operation_kind_atom = atoms::operation_kind().encode(env);
+    let operation_kind_term = op_kind_atom.encode(env);
+
+    // Create an 8-element tuple
+    Ok(rustler::types::tuple::make_tuple(
+        env,
+        &[
+            field_names_atom,
+            field_names_term,
+            field_paths_atom,
+            field_paths_term,
+            column_map_atom,
+            column_map_term,
+            operation_kind_atom,
+            operation_kind_term,
+        ],
+    ))
 }
 
 /// Create a resolution request from a cached CachedQueryInfo
@@ -118,9 +142,7 @@ fn convert_resolution_request_to_elixir<'a>(
 fn create_resolution_request_from_cached(
     cached_info: &CachedQueryInfo,
 ) -> Result<ResolutionRequest, String> {
-    // This function extracts field paths from a cached CachedQueryInfo
-    // and creates a new ResolutionRequest for Elixir
-
+    // Extract field paths from a cached CachedQueryInfo
     let field_paths = match &cached_info.field_paths {
         Some(paths) => paths,
         None => return Err("Field paths not found in cached query".to_string()),
@@ -138,9 +160,24 @@ fn create_resolution_request_from_cached(
     // Convert FieldPaths with SymbolIds to indices for Elixir
     let converted_paths = convert_paths_to_indices(field_paths, &symbol_to_index);
 
+    // Extract column usage from cached query info
+    let column_map = match &cached_info.column_usage {
+        Some(column_usage) => {
+            // Convert column usage to table indices with column strings
+            crate::extraction::convert_column_usage_to_indices(
+                column_usage,
+                field_paths,
+                &symbol_to_index,
+            )
+        }
+        None => HashMap::new(), // Default empty column map if no column usage info
+    };
+
     Ok(ResolutionRequest {
         field_names,
         field_paths: converted_paths,
+        column_map,
+        operation_kind: cached_info.operation_kind,
     })
 }
 

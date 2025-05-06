@@ -16,12 +16,16 @@ rustler::atoms! {
 
     // Operation kinds
     query,
-    mutation,
+    insert_mutation,
+    update_mutation,
+    delete_mutation,
     subscription,
 
     // Resolution request keys
     field_names,
     field_paths,
+    column_map,
+    operation_kind,
 }
 
 /// Convert GraphQLOperationKind to Erlang atom
@@ -29,7 +33,9 @@ rustler::atoms! {
 pub fn operation_kind_to_atom(kind: GraphQLOperationKind) -> Atom {
     match kind {
         GraphQLOperationKind::Query => query(),
-        GraphQLOperationKind::Mutation => mutation(),
+        GraphQLOperationKind::InsertMutation => insert_mutation(),
+        GraphQLOperationKind::UpdateMutation => update_mutation(),
+        GraphQLOperationKind::DeleteMutation => delete_mutation(),
         GraphQLOperationKind::Subscription => subscription(),
     }
 }

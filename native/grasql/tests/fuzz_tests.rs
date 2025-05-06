@@ -183,7 +183,7 @@ proptest! {
         let ctx = ASTContext::new();
         let document = Document::parse(&ctx, &query).unwrap();
         let mut extractor = FieldPathExtractor::new();
-        let paths = extractor.extract(&document).unwrap();
+        let (paths, _) = extractor.extract(&document).unwrap();
 
         // Ensure we extracted at least one path
         prop_assert!(!paths.is_empty());
@@ -231,7 +231,7 @@ fn snapshot_test_field_extraction_basic_queries() {
         let ctx = ASTContext::new();
         if let Ok(document) = Document::parse(&ctx, query) {
             let mut extractor = FieldPathExtractor::new();
-            let paths = extractor.extract(&document).unwrap();
+            let (paths, _) = extractor.extract(&document).unwrap();
 
             // Use basic assertions instead of snapshots for now
             // The user can run cargo insta review manually to accept snapshots
@@ -330,7 +330,7 @@ fn test_all_operators() {
     let ctx = ASTContext::new();
     if let Ok(document) = Document::parse(&ctx, query) {
         let mut extractor = FieldPathExtractor::new();
-        let paths = extractor.extract(&document).unwrap();
+        let (paths, _) = extractor.extract(&document).unwrap();
 
         // Check that we extract the expected paths
         assert!(!paths.is_empty(), "Paths shouldn't be empty");

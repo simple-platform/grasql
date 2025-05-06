@@ -7,7 +7,54 @@ use crate::interning::{get_all_strings, intern_str};
 use crate::types::{GraphQLOperationKind, ParsedQueryInfo, ResolutionRequest};
 use graphql_query::ast::{ASTContext, Definition, Document, Field, ParseNode, Selection};
 use std::collections::HashMap;
+use std::mem;
 use std::sync::Arc;
+
+/// Determine the specific operation kind, including mutation type
+#[inline(always)]
+fn determine_operation_kind(document: &Document) -> Result<GraphQLOperationKind, String> {
+    // Find the operation first
+    let operation = document
+        .operation(None)
+        .map_err(|e| format!("Error determining operation: {}", e))?;
+
+    // If it's a mutation, determine specific type
+    if let graphql_query::ast::OperationKind::Mutation = operation.operation {
+        // Check if we have selections first
+        if operation.selection_set.selections.is_empty() {
+            return Err(String::from("Mutation has empty selection set"));
+        }
+
+        // Look at first selection name to determine mutation type
+        if let Some(selection) = operation.selection_set.selections.first() {
+            if let Some(field) = selection.field() {
+                // Get the current configuration to access prefixes
+                let config = match crate::config::CONFIG.lock() {
+                    Ok(cfg) => match &*cfg {
+                        Some(c) => c.clone(),
+                        None => return Ok(GraphQLOperationKind::InsertMutation), // Default if not initialized
+                    },
+                    Err(_) => return Ok(GraphQLOperationKind::InsertMutation), // Default if lock fails
+                };
+
+                // Check field name against configured prefixes
+                let field_name = field.name;
+                if field_name.starts_with(&config.insert_prefix) {
+                    return Ok(GraphQLOperationKind::InsertMutation);
+                } else if field_name.starts_with(&config.update_prefix) {
+                    return Ok(GraphQLOperationKind::UpdateMutation);
+                } else if field_name.starts_with(&config.delete_prefix) {
+                    return Ok(GraphQLOperationKind::DeleteMutation);
+                }
+            }
+        }
+        // Default to insert mutation if we can't determine type
+        return Ok(GraphQLOperationKind::InsertMutation);
+    }
+
+    // For non-mutation operations, convert directly
+    Ok(operation.operation.into())
+}
 
 /// Parse a GraphQL query string and extract necessary information
 ///
@@ -67,28 +114,26 @@ pub fn parse_graphql(query: &str) -> Result<(ParsedQueryInfo, ResolutionRequest)
         }
     }
 
-    // Extract operation information
-    let mut operation_kind = GraphQLOperationKind::Query; // Default to query
+    // Determine operation kind (now with specific mutation types)
+    let operation_kind = determine_operation_kind(&document)?;
+
+    // Extract operation name
     let mut operation_name = None;
 
     // Find the first operation definition
     for definition in document.definitions.iter() {
         if let Definition::Operation(op) = definition {
-            operation_kind = op.operation.into();
-
             if let Some(name) = &op.name {
                 operation_name = Some(name.name.to_string());
             }
-
-            // For simplicity, we just use the first operation
             break;
         }
     }
 
-    // Extract field paths
+    // Extract field paths and column usage
     let mut extractor = FieldPathExtractor::new();
-    let field_paths = match extractor.extract(&document) {
-        Ok(paths) => paths,
+    let (field_paths, column_usage) = match extractor.extract(&document) {
+        Ok(result) => result,
         Err(e) => return Err(e),
     };
 
@@ -104,20 +149,66 @@ pub fn parse_graphql(query: &str) -> Result<(ParsedQueryInfo, ResolutionRequest)
     // Convert FieldPaths with SymbolIds to indices for Elixir
     let converted_paths = convert_paths_to_indices(&field_paths, &symbol_to_index);
 
+    // Convert column usage to table indices with column strings
+    let column_map = crate::extraction::convert_column_usage_to_indices(
+        &column_usage,
+        &field_paths,
+        &symbol_to_index,
+    );
+
+    // Save raw pointer to the document - will be valid as long as ctx is alive
+    // This avoids re-parsing the document later
+    let document_ptr = unsafe {
+        // Safety: We're storing the document in the AST context's arena,
+        // which is wrapped in an Arc, ensuring it lives as long as references to it.
+        // We're extending the lifetime to 'static but we maintain the invariant that
+        // the pointer is only dereferenced when the AST context is still alive.
+
+        // Run several validation checks to ensure the document is valid
+        debug_assert!(
+            !document.definitions.is_empty(),
+            "Document has no definitions, may be invalid"
+        );
+
+        // Check that we can successfully obtain the operation (basic validation)
+        let _operation = document
+            .operation(None)
+            .expect("Document should have a valid operation");
+
+        // Get the raw pointer to the Document
+        let ptr = document as *const Document;
+        debug_assert!(!ptr.is_null(), "Document pointer is null");
+
+        // This lifetime transmutation is safe because:
+        // 1. We only use this pointer with a valid ast_context reference
+        // 2. The document's memory is owned by the ast_context arena
+        // 3. We only perform immutable reads through this pointer
+        // 4. The document() method performs extensive validation
+        mem::transmute::<*const Document, *const Document<'static>>(ptr)
+    };
+
+    // Create AST context with Arc for thread-safety
+    let ctx_arc = Arc::new(ctx);
+
     // Create parsed query info with extracted data
     let parsed_query_info = ParsedQueryInfo {
         operation_kind,
         operation_name,
         field_paths: Some(field_paths.clone()),
         path_index: Some(build_path_index(&field_paths)),
-        ast_context: Some(Arc::new(ctx)),
-        document: None, // We can't easily store the document with 'static lifetime
+        ast_context: Some(ctx_arc),
+        original_query: Some(query.to_string()),
+        document_ptr: Some(document_ptr),
+        column_usage: Some(column_usage),
+        _phantom: std::marker::PhantomData,
     };
 
-    // Create resolution request
+    // Create resolution request with column map
     let resolution_request = ResolutionRequest {
         field_names,
         field_paths: converted_paths,
+        column_map,
+        operation_kind,
     };
 
     Ok((parsed_query_info, resolution_request))
