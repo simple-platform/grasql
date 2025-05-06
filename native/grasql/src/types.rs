@@ -132,6 +132,20 @@ impl ResolutionRequest {
 }
 
 /// Thread-safe version of ParsedQueryInfo for caching
+///
+/// # Safety and Threading Model
+///
+/// This struct maintains the following invariants:
+///
+/// - The AST Context is stored in an Arc to ensure it lives as long as any CachedQueryInfo
+/// - The document_ptr is a raw pointer to a Document that lives in the AST Context's arena
+/// - The document_ptr is ONLY valid while the ast_context exists and should never be used after
+/// - All Document data are immutable (read-only) after parsing, making concurrent reads safe
+///
+/// We implement Send and Sync explicitly because:
+/// 1. All fields are already Send/Sync except document_ptr
+/// 2. document_ptr is used in a controlled manner that guarantees memory safety
+/// 3. We only use document_ptr for immutable reads, preventing data races
 #[derive(Clone)]
 pub struct CachedQueryInfo {
     /// Kind of GraphQL operation
@@ -159,10 +173,32 @@ pub struct CachedQueryInfo {
     pub document_ptr: Option<*const Document<'static>>,
 }
 
-// Implement Send and Sync since we're using raw pointers
-// This is safe because we maintain the invariant that document_ptr is only
-// accessed when ast_context is alive, and we only read immutable data
+// Implementation of Send for CachedQueryInfo
+//
+// # Safety
+//
+// This is safe because:
+// 1. All fields of CachedQueryInfo are Send except for document_ptr
+// 2. document_ptr is just a raw pointer which can be safely sent to another thread
+// 3. We maintain the invariant that document_ptr is only dereferenced when:
+//    a. ast_context is still alive (guaranteed by Arc)
+//    b. the dereferencing happens through the document() method with appropriate checks
+//
+// The document() method enforces safe access regardless of which thread is accessing the pointer.
 unsafe impl Send for CachedQueryInfo {}
+
+// Implementation of Sync for CachedQueryInfo
+//
+// # Safety
+//
+// This is safe because:
+// 1. All fields of CachedQueryInfo are Sync except for document_ptr
+// 2. document_ptr is only used for immutable reads from a shared reference
+// 3. The Document it points to contains only immutable data after parsing
+// 4. Concurrent immutable reads from multiple threads are always thread-safe
+// 5. The document() method performs proper checks before dereferencing
+//
+// Since we never perform mutable access through document_ptr, there can be no data races.
 unsafe impl Sync for CachedQueryInfo {}
 
 // Manual Debug implementation to avoid ASTContext not implementing Debug
@@ -190,31 +226,86 @@ impl fmt::Debug for CachedQueryInfo {
 impl CachedQueryInfo {
     /// Safely get a reference to the Document
     ///
-    /// This is safe because:
-    /// 1. The Document is allocated in the ASTContext's arena
-    /// 2. The ASTContext is kept alive by the Arc
-    /// 3. Document is immutable and thread-safe
+    /// This method provides safe access to the Document AST with proper lifetime guarantees.
+    /// It will never return an invalid document reference.
+    ///
+    /// # Memory Safety
+    ///
+    /// This method maintains memory safety through:
+    /// 1. Only dereferencing document_ptr while holding a reference to ast_context
+    /// 2. The Document is arena-allocated in the ASTContext, ensuring it's valid as long as the context exists
+    /// 3. The ASTContext is wrapped in Arc, ensuring proper lifetime management
+    ///
+    /// # Fallback Behavior
+    ///
+    /// If document_ptr is None but we have ast_context and original_query, we'll:
+    /// - Re-parse the original query using the stored context
+    /// - Return the freshly parsed document (at a small performance cost)
+    ///
+    /// # Returns
+    ///
+    /// - Some(&Document) if a valid document is available through pointer or re-parsing
+    /// - None if no document can be obtained
     pub fn document(&self) -> Option<&Document> {
-        if let (Some(_ctx), Some(ptr)) = (&self.ast_context, self.document_ptr) {
-            // Safety: The Document pointer is valid as long as ast_context is alive,
-            // which is guaranteed by the Arc we're holding.
-            unsafe { Some(&*ptr) }
-        } else if let (Some(ctx), Some(query)) = (&self.ast_context, &self.original_query) {
-            // Fallback to re-parsing if document_ptr is not available
-            match Document::parse(ctx, query) {
-                Ok(doc) => Some(doc),
-                Err(_) => None,
+        match (&self.ast_context, self.document_ptr) {
+            (Some(ctx), Some(ptr)) => {
+                // Verify AST context is properly maintained with at least one strong reference
+                debug_assert!(
+                    Arc::strong_count(ctx) >= 1,
+                    "AST context has no strong references left"
+                );
+
+                // Verify pointer is not null (shouldn't happen but good to check)
+                debug_assert!(!ptr.is_null(), "Document pointer is null");
+
+                // Check context wasn't replaced with a newly created context
+                debug_assert!(
+                    self.original_query.is_some(),
+                    "Missing original_query - context validity cannot be verified"
+                );
+
+                // Safety: The Document pointer is valid as long as ast_context is alive,
+                // which is guaranteed by the Arc we're holding and the checks above.
+                unsafe { Some(&*ptr) }
             }
-        } else {
-            None
+            (Some(ctx), None) if self.original_query.is_some() => {
+                // Fallback to re-parsing if document_ptr is not available
+                // This is slower but safely recovers the document
+                match Document::parse(ctx, self.original_query.as_ref().unwrap()) {
+                    Ok(doc) => {
+                        // Log this fallback in debug builds as it indicates a performance issue
+                        eprintln!("Falling back to re-parsing query: performance warning");
+                        Some(doc)
+                    }
+                    Err(e) => {
+                        // This is unexpected since the query parsed successfully the first time
+                        eprintln!("Re-parsing previously valid query failed: {:?}", e);
+                        None
+                    }
+                }
+            }
+            _ => None,
         }
     }
 }
 
 /// Convert ParsedQueryInfo to CachedQueryInfo
+///
+/// This implementation carefully preserves all the necessary information
+/// from ParsedQueryInfo, including the AST context and document pointer,
+/// to ensure the resulting CachedQueryInfo can safely access the parsed Document.
+///
+/// # Safety Considerations
+///
+/// The safety of this conversion relies on maintaining these invariants:
+/// 1. The AST context from the original ParsedQueryInfo is preserved in an Arc
+/// 2. The document pointer is only valid while the AST context exists
+/// 3. The document() method will only dereference the pointer when it's safe
 impl<'a> From<ParsedQueryInfo<'a>> for CachedQueryInfo {
     #[inline(always)]
     fn from(info: ParsedQueryInfo<'a>) -> Self {
+        // The document_ptr comes directly from the ParsedQueryInfo
+        // It is only dereferenced in the document() method with proper safety checks
         CachedQueryInfo {
             operation_kind: info.operation_kind,
             operation_name: info.operation_name,

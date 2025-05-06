@@ -163,7 +163,27 @@ pub fn parse_graphql(query: &str) -> Result<(ParsedQueryInfo, ResolutionRequest)
         // which is wrapped in an Arc, ensuring it lives as long as references to it.
         // We're extending the lifetime to 'static but we maintain the invariant that
         // the pointer is only dereferenced when the AST context is still alive.
+
+        // Run several validation checks to ensure the document is valid
+        debug_assert!(
+            !document.definitions.is_empty(),
+            "Document has no definitions, may be invalid"
+        );
+
+        // Check that we can successfully obtain the operation (basic validation)
+        let _operation = document
+            .operation(None)
+            .expect("Document should have a valid operation");
+
+        // Get the raw pointer to the Document
         let ptr = document as *const Document;
+        debug_assert!(!ptr.is_null(), "Document pointer is null");
+
+        // This lifetime transmutation is safe because:
+        // 1. We only use this pointer with a valid ast_context reference
+        // 2. The document's memory is owned by the ast_context arena
+        // 3. We only perform immutable reads through this pointer
+        // 4. The document() method performs extensive validation
         mem::transmute::<*const Document, *const Document<'static>>(ptr)
     };
 

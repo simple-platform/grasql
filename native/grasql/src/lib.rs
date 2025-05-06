@@ -8,7 +8,7 @@
 /// through NIFs (Native Implemented Functions).
 // Module declarations
 mod atoms;
-mod cache;
+pub mod cache;
 mod config;
 pub mod extraction;
 pub mod interning;

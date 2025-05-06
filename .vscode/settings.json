@@ -42,6 +42,7 @@
     "devbox",
     "doctest",
     "doctests",
+    "droppability",
     "dylib",
     "erts",
     "flatbuffer",
