@@ -10,10 +10,10 @@
 mod atoms;
 mod cache;
 mod config;
-pub mod extraction; // Made public for testing
+pub mod extraction;
 pub mod interning;
 mod nif;
-pub mod parser; // Made public for testing
+pub mod parser;
 mod sql;
 pub mod types;
 

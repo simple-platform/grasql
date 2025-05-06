@@ -7,6 +7,7 @@ use crate::interning::{get_all_strings, intern_str};
 use crate::types::{GraphQLOperationKind, ParsedQueryInfo, ResolutionRequest};
 use graphql_query::ast::{ASTContext, Definition, Document, Field, ParseNode, Selection};
 use std::collections::HashMap;
+use std::mem;
 use std::sync::Arc;
 
 /// Determine the specific operation kind, including mutation type
@@ -155,15 +156,31 @@ pub fn parse_graphql(query: &str) -> Result<(ParsedQueryInfo, ResolutionRequest)
         &symbol_to_index,
     );
 
+    // Save raw pointer to the document - will be valid as long as ctx is alive
+    // This avoids re-parsing the document later
+    let document_ptr = unsafe {
+        // Safety: We're storing the document in the AST context's arena,
+        // which is wrapped in an Arc, ensuring it lives as long as references to it.
+        // We're extending the lifetime to 'static but we maintain the invariant that
+        // the pointer is only dereferenced when the AST context is still alive.
+        let ptr = document as *const Document;
+        mem::transmute::<*const Document, *const Document<'static>>(ptr)
+    };
+
+    // Create AST context with Arc for thread-safety
+    let ctx_arc = Arc::new(ctx);
+
     // Create parsed query info with extracted data
     let parsed_query_info = ParsedQueryInfo {
         operation_kind,
         operation_name,
         field_paths: Some(field_paths.clone()),
         path_index: Some(build_path_index(&field_paths)),
-        ast_context: Some(Arc::new(ctx)),
-        document: None,
+        ast_context: Some(ctx_arc),
+        original_query: Some(query.to_string()),
+        document_ptr: Some(document_ptr),
         column_usage: Some(column_usage),
+        _phantom: std::marker::PhantomData,
     };
 
     // Create resolution request with column map

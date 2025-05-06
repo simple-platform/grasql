@@ -1,4 +1,4 @@
-use graphql_query::ast::{ASTContext, Document};
+use graphql_query::ast::{ASTContext, Document, ParseNode};
 /// GraSQL type definitions
 ///
 /// This module contains type definitions used throughout the GraSQL library.
@@ -132,7 +132,7 @@ impl ResolutionRequest {
 }
 
 /// Thread-safe version of ParsedQueryInfo for caching
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct CachedQueryInfo {
     /// Kind of GraphQL operation
     pub operation_kind: GraphQLOperationKind,
@@ -148,6 +148,67 @@ pub struct CachedQueryInfo {
 
     /// Column usage information keyed by table path
     pub column_usage: Option<HashMap<FieldPath, HashSet<SymbolId>>>,
+
+    /// Store the original AST context for future use
+    pub ast_context: Option<Arc<ASTContext>>,
+
+    /// Original query string for re-parsing if needed
+    pub original_query: Option<String>,
+
+    /// Raw pointer to the Document - valid as long as ast_context exists
+    pub document_ptr: Option<*const Document<'static>>,
+}
+
+// Implement Send and Sync since we're using raw pointers
+// This is safe because we maintain the invariant that document_ptr is only
+// accessed when ast_context is alive, and we only read immutable data
+unsafe impl Send for CachedQueryInfo {}
+unsafe impl Sync for CachedQueryInfo {}
+
+// Manual Debug implementation to avoid ASTContext not implementing Debug
+impl fmt::Debug for CachedQueryInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CachedQueryInfo")
+            .field("operation_kind", &self.operation_kind)
+            .field("operation_name", &self.operation_name)
+            .field("field_paths", &self.field_paths)
+            .field("path_index", &self.path_index)
+            .field("column_usage", &self.column_usage)
+            .field("ast_context", &"<ASTContext>")
+            .field(
+                "original_query",
+                &self
+                    .original_query
+                    .as_ref()
+                    .map(|q| format!("{}...", &q[..20.min(q.len())])),
+            )
+            .field("document_ptr", &self.document_ptr.map(|_| "<Document>"))
+            .finish()
+    }
+}
+
+impl CachedQueryInfo {
+    /// Safely get a reference to the Document
+    ///
+    /// This is safe because:
+    /// 1. The Document is allocated in the ASTContext's arena
+    /// 2. The ASTContext is kept alive by the Arc
+    /// 3. Document is immutable and thread-safe
+    pub fn document(&self) -> Option<&Document> {
+        if let (Some(_ctx), Some(ptr)) = (&self.ast_context, self.document_ptr) {
+            // Safety: The Document pointer is valid as long as ast_context is alive,
+            // which is guaranteed by the Arc we're holding.
+            unsafe { Some(&*ptr) }
+        } else if let (Some(ctx), Some(query)) = (&self.ast_context, &self.original_query) {
+            // Fallback to re-parsing if document_ptr is not available
+            match Document::parse(ctx, query) {
+                Ok(doc) => Some(doc),
+                Err(_) => None,
+            }
+        } else {
+            None
+        }
+    }
 }
 
 /// Convert ParsedQueryInfo to CachedQueryInfo
@@ -160,6 +221,9 @@ impl<'a> From<ParsedQueryInfo<'a>> for CachedQueryInfo {
             field_paths: info.field_paths,
             path_index: info.path_index,
             column_usage: info.column_usage,
+            ast_context: info.ast_context,
+            original_query: info.original_query,
+            document_ptr: info.document_ptr,
         }
     }
 }
@@ -185,12 +249,17 @@ pub struct ParsedQueryInfo<'a> {
     /// Store the original AST context for future use
     pub ast_context: Option<Arc<ASTContext>>,
 
-    /// Store the document for Phase 3
-    /// The document is only needed until SQL generation is complete
-    pub document: Option<Arc<Document<'a>>>,
+    /// Original query string for re-parsing if needed
+    pub original_query: Option<String>,
 
     /// Column usage information keyed by table path
     pub column_usage: Option<HashMap<FieldPath, HashSet<SymbolId>>>,
+
+    /// Raw pointer to the Document - valid as long as ast_context exists
+    pub document_ptr: Option<*const Document<'static>>,
+
+    /// Lifetime parameter for borrow checker
+    pub _phantom: std::marker::PhantomData<&'a ()>,
 }
 
 // Manual Debug implementation to avoid ASTContext not implementing Debug
@@ -202,9 +271,35 @@ impl<'a> fmt::Debug for ParsedQueryInfo<'a> {
             .field("field_paths", &self.field_paths)
             .field("path_index", &self.path_index)
             .field("ast_context", &"<ASTContext>")
-            .field("document", &"<Document>")
+            .field(
+                "original_query",
+                &self
+                    .original_query
+                    .as_ref()
+                    .map(|q| format!("{}...", &q[..20.min(q.len())])),
+            )
             .field("column_usage", &self.column_usage)
+            .field("document_ptr", &self.document_ptr.map(|_| "<Document>"))
             .finish()
+    }
+}
+
+impl<'a> ParsedQueryInfo<'a> {
+    /// Safely get a reference to the Document
+    pub fn document(&self) -> Option<&Document> {
+        if let (Some(_ctx), Some(ptr)) = (&self.ast_context, self.document_ptr) {
+            // Safety: The Document pointer is valid as long as ast_context is alive,
+            // which is guaranteed by the Arc we're holding.
+            unsafe { Some(&*ptr) }
+        } else if let (Some(ctx), Some(query)) = (&self.ast_context, &self.original_query) {
+            // Re-parse the query using the stored ASTContext if no document_ptr is available
+            match Document::parse(ctx, query) {
+                Ok(doc) => Some(doc),
+                Err(_) => None,
+            }
+        } else {
+            None
+        }
     }
 }
 
