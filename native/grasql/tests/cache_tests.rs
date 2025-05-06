@@ -1,12 +1,15 @@
+#![cfg(feature = "test-utils")]
+
 use std::sync::{Arc, Barrier};
 use std::thread;
-use std::time::Duration;
 
 use graphql_query::ast::OperationKind;
 
-use grasql::cache::{add_to_cache, generate_query_id, get_from_cache};
+#[cfg(test)]
+use grasql::insert_raw_for_test;
 use grasql::parser::parse_graphql;
 use grasql::types::{CachedQueryInfo, GraphQLOperationKind};
+use grasql::{add_to_cache, generate_query_id, get_from_cache};
 
 /// Test basic cache functionality
 #[test]
@@ -109,13 +112,9 @@ fn test_fallback_reparse_behavior() {
         document_ptr: None, // Intentionally set to None to test fallback
     };
 
-    // Add to cache - Create a new ParsedQueryInfo with lifetime parameter
+    // Add to cache using our test helper
     let query_id = generate_query_id(query);
-
-    // We need to directly insert to QUERY_CACHE instead of using add_to_cache
-    // since we already have a CachedQueryInfo
-    use grasql::cache::QUERY_CACHE;
-    QUERY_CACHE.insert(query_id.clone(), modified_info);
+    insert_raw_for_test(&query_id, modified_info);
 
     // Retrieve and verify document access works through re-parsing
     let cached_info = get_from_cache(&query_id).unwrap();
@@ -261,14 +260,11 @@ fn test_high_concurrency_mixed_operations() {
                         // Wait for all threads to be ready
                         barrier_clone.wait();
 
-                        // Perform 50 cache accesses
+                        // Perform 50 cache accesses - no sleep between iterations for true concurrency
                         for _ in 0..50 {
                             let cached_info = get_from_cache(&id_clone).unwrap();
                             let document = cached_info.document().unwrap();
                             let _ = document.operation(None).unwrap();
-
-                            // Small delay to increase chance of thread interleaving
-                            thread::sleep(Duration::from_micros(1));
                         }
 
                         true
@@ -285,4 +281,159 @@ fn test_high_concurrency_mixed_operations() {
             "Thread should complete successfully"
         );
     }
+}
+
+/// Test reference counting behavior specifically
+#[test]
+fn test_arc_reference_counting() {
+    // Setup - parse query and create cached info
+    let query = "{ users { id } }";
+    let (parsed_info, _) = parse_graphql(query).unwrap();
+
+    // Get initial reference count
+    let context = parsed_info.ast_context.as_ref().unwrap();
+    let initial_count = Arc::strong_count(context);
+
+    // Create cached copies to increase ref count
+    let cached1 = CachedQueryInfo::from(parsed_info.clone());
+    let cached2 = cached1.clone();
+
+    // Verify ref count increased properly
+    assert_eq!(
+        Arc::strong_count(context),
+        initial_count + 2,
+        "Reference count should increase with each clone"
+    );
+
+    // Drop one copy
+    drop(cached1);
+
+    // Verify ref count decreased but document is still accessible
+    assert_eq!(
+        Arc::strong_count(context),
+        initial_count + 1,
+        "Reference count should decrease after drop"
+    );
+
+    // Verify document is still accessible from remaining instance
+    assert!(cached2.document().is_some());
+}
+
+/// Test high concurrency without artificial delays
+#[test]
+fn test_high_concurrency_without_sleeps() {
+    // Parse and cache multiple queries
+    let queries = vec!["{ users { id name } }", "{ posts { id title } }"];
+
+    let ids: Vec<_> = queries
+        .iter()
+        .map(|q| {
+            let (parsed_info, _) = parse_graphql(q).unwrap();
+            let query_id = generate_query_id(q);
+            add_to_cache(&query_id, parsed_info);
+            query_id
+        })
+        .collect();
+
+    // Create multiple threads accessing the cache concurrently
+    let threads_per_query = 20; // More threads for higher concurrency
+    let total_threads = ids.len() * threads_per_query;
+    let barrier = Arc::new(Barrier::new(total_threads));
+
+    // Spawn threads that access the cache concurrently without artificial delays
+    let handles: Vec<_> = ids
+        .iter()
+        .flat_map(|id| {
+            let id_clone = id.clone();
+            let barrier_clone = Arc::clone(&barrier);
+
+            (0..threads_per_query)
+                .map(move |_| {
+                    let id_clone = id_clone.clone();
+                    let barrier_clone = Arc::clone(&barrier_clone);
+
+                    thread::spawn(move || {
+                        // Synchronize all threads to start at the same time
+                        barrier_clone.wait();
+
+                        // Access cached query repeatedly in a tight loop - no sleeps
+                        for _ in 0..100 {
+                            // Higher iteration count for stress testing
+                            let cached_info = get_from_cache(&id_clone).unwrap();
+                            let document = cached_info.document().unwrap();
+                            let _ = document.operation(None).unwrap();
+                        }
+
+                        true
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+
+    // Wait for all threads to complete
+    for handle in handles {
+        assert!(
+            handle.join().unwrap(),
+            "Thread should complete successfully without artificial delays"
+        );
+    }
+}
+
+/// Test document validity across thread boundaries
+#[test]
+fn test_document_validity_across_threads() {
+    // Parse and cache a query
+    let query = "{ users { id posts { title comments { content } } } }";
+    let (parsed_info, _) = parse_graphql(query).unwrap();
+    let query_id = generate_query_id(query);
+    add_to_cache(&query_id, parsed_info);
+
+    // Spawn a thread that accesses the cached document
+    let thread_handle = thread::spawn(move || {
+        // Get from cache in the new thread
+        let cached_info = get_from_cache(&query_id).unwrap();
+
+        // Access document across thread boundary
+        let document = cached_info.document().unwrap();
+
+        // Perform deep inspection of the document to verify it's fully valid
+        let operation = document.operation(None).unwrap();
+
+        // Check first-level selections
+        let users_selection = &operation.selection_set.selections[0];
+        let users_field = users_selection.field().unwrap();
+        assert_eq!(users_field.name, "users");
+
+        // Check nested selections - first is id field
+        let id_selection = &users_field.selection_set.selections[0];
+        let id_field = id_selection.field().unwrap();
+        assert_eq!(id_field.name, "id");
+
+        // Check nested selections - second is posts field
+        let posts_selection = &users_field.selection_set.selections[1];
+        let posts_field = posts_selection.field().unwrap();
+        assert_eq!(posts_field.name, "posts");
+
+        // Check deeply nested selections
+        let title_selection = &posts_field.selection_set.selections[0];
+        let title_field = title_selection.field().unwrap();
+        assert_eq!(title_field.name, "title");
+
+        // Very deeply nested
+        let comments_selection = &posts_field.selection_set.selections[1];
+        let comments_field = comments_selection.field().unwrap();
+        let content_selection = &comments_field.selection_set.selections[0];
+        let content_field = content_selection.field().unwrap();
+
+        assert_eq!(comments_field.name, "comments");
+        assert_eq!(content_field.name, "content");
+
+        true
+    });
+
+    assert!(
+        thread_handle.join().unwrap(),
+        "Document should be valid across thread boundaries"
+    );
 }

@@ -8,7 +8,7 @@
 /// through NIFs (Native Implemented Functions).
 // Module declarations
 mod atoms;
-pub mod cache;
+mod cache;
 mod config;
 pub mod extraction;
 pub mod interning;
@@ -21,9 +21,14 @@ pub mod types;
 pub use config::Config;
 pub use extraction::{build_path_index, convert_paths_to_indices, FieldPathExtractor};
 pub use interning::{get_all_strings, intern_str, resolve_str};
-pub use types::{
-    CachedQueryInfo, FieldPath, GraphQLOperationKind, ParsedQueryInfo, ResolutionRequest, SymbolId,
-};
+pub use types::{CachedQueryInfo, GraphQLOperationKind, ParsedQueryInfo};
+
+// Re-export from cache module for public API
+pub use cache::{add_to_cache, generate_query_id, get_from_cache};
+
+// Re-export test helpers (available for both internal and integration tests)
+#[cfg(any(test, feature = "test-utils"))]
+pub use cache::insert_raw_for_test;
 
 // Module initialization
 fn load(_env: rustler::Env, opts: rustler::Term) -> bool {
