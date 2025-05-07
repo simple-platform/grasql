@@ -189,9 +189,7 @@ fn create_resolution_request_from_cached(
 #[rustler::nif]
 pub fn do_generate_sql<'a>(
     env: Env<'a>,
-    query_id: String,
-    _variables: Term<'a>,
-    _schema: Term<'a>,
+    _resolution_response: Term<'a>,
 ) -> rustler::NifResult<Term<'a>> {
     // Get the current configuration
     let _config = match CONFIG.lock() {
@@ -203,18 +201,18 @@ pub fn do_generate_sql<'a>(
     };
 
     // Try to get from cache
-    let cached_query_info = match get_from_cache(&query_id) {
-        Some(info) => info,
-        None => return Err(Error::Term(Box::new("Query not found in cache"))),
-    };
+    // let cached_query_info = match get_from_cache(&resolution_response.query_id) {
+    //     Some(info) => info,
+    //     None => return Err(Error::Term(Box::new("Query not found in cache"))),
+    // };
 
     // Generate SQL using the cached query info
     // Note: We're not using the schema parameter yet - this will be implemented in Phase 3
     // For now, we just store the schema information and pass it along
-    let sql = generate_sql(&cached_query_info);
+    // let sql = generate_sql(&cached_query_info);
 
     // Create an empty list for parameters
     let params: Vec<Term<'a>> = Vec::new();
 
-    Ok((atoms::ok(), sql, params).encode(env))
+    Ok((atoms::ok(), "SELECT 1", params).encode(env))
 }

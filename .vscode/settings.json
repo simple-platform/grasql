@@ -83,6 +83,7 @@
     "phash",
     "Postgrex",
     "proptest",
+    "QLAPI",
     "rebar",
     "rels",
     "reparsing",
