@@ -198,51 +198,51 @@
         }
       }
     },
-    "flatbuffers@25.1.24": {
-      "last_modified": "2025-03-11T17:52:14Z",
-      "resolved": "github:NixOS/nixpkgs/0d534853a55b5d02a4ababa1d71921ce8f0aee4c#flatbuffers",
+    "flatbuffers@25.2.10": {
+      "last_modified": "2025-05-06T08:06:31Z",
+      "resolved": "github:NixOS/nixpkgs/1cb1c02a6b1b7cf67e3d7731cbbf327a53da9679#flatbuffers",
       "source": "devbox-search",
-      "version": "25.1.24",
+      "version": "25.2.10",
       "systems": {
         "aarch64-darwin": {
           "outputs": [
             {
               "name": "out",
-              "path": "/nix/store/93n0wr1r1d247rn4n6nn8d595d65z0la-flatbuffers-25.1.24",
+              "path": "/nix/store/94v0b6lb6qahxqkfybzg83z841s1wkyi-flatbuffers-25.2.10",
               "default": true
             }
           ],
-          "store_path": "/nix/store/93n0wr1r1d247rn4n6nn8d595d65z0la-flatbuffers-25.1.24"
+          "store_path": "/nix/store/94v0b6lb6qahxqkfybzg83z841s1wkyi-flatbuffers-25.2.10"
         },
         "aarch64-linux": {
           "outputs": [
             {
               "name": "out",
-              "path": "/nix/store/i4398a6fanqgrd82j9px7byzz39rkq9p-flatbuffers-25.1.24",
+              "path": "/nix/store/5w2hhcmpvx02hg6akhhg2a8dpyyqzfh5-flatbuffers-25.2.10",
               "default": true
             }
           ],
-          "store_path": "/nix/store/i4398a6fanqgrd82j9px7byzz39rkq9p-flatbuffers-25.1.24"
+          "store_path": "/nix/store/5w2hhcmpvx02hg6akhhg2a8dpyyqzfh5-flatbuffers-25.2.10"
         },
         "x86_64-darwin": {
           "outputs": [
             {
               "name": "out",
-              "path": "/nix/store/0vd9wk8ahgic9m9p9gkhm5b8qj5h2nvn-flatbuffers-25.1.24",
+              "path": "/nix/store/2aj7a0jfnrc1ykf9js9lxbg16kr93pk8-flatbuffers-25.2.10",
               "default": true
             }
           ],
-          "store_path": "/nix/store/0vd9wk8ahgic9m9p9gkhm5b8qj5h2nvn-flatbuffers-25.1.24"
+          "store_path": "/nix/store/2aj7a0jfnrc1ykf9js9lxbg16kr93pk8-flatbuffers-25.2.10"
         },
         "x86_64-linux": {
           "outputs": [
             {
               "name": "out",
-              "path": "/nix/store/b2gss5v3s9p7i932c2si0kswr3ls3xzd-flatbuffers-25.1.24",
+              "path": "/nix/store/084wjkayimzir4fmj5xn51a26n4a53ka-flatbuffers-25.2.10",
               "default": true
             }
           ],
-          "store_path": "/nix/store/b2gss5v3s9p7i932c2si0kswr3ls3xzd-flatbuffers-25.1.24"
+          "store_path": "/nix/store/084wjkayimzir4fmj5xn51a26n4a53ka-flatbuffers-25.2.10"
         }
       }
     },
