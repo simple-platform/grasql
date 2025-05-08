@@ -13,18 +13,13 @@ use std::sync::Arc;
 
 /// Determine the specific operation kind, including mutation type
 #[inline(always)]
-fn determine_operation_kind(document: &Document) -> Result<GraphQLOperationKind, String> {
+fn determine_operation_kind(
+    document: &Document,
+    config: &crate::config::Config,
+) -> Result<GraphQLOperationKind, String> {
     // Find all operation definitions and determine the primary operation kind
     let mut has_operation = false;
     let mut primary_kind = GraphQLOperationKind::Query; // Default to query
-
-    // Extract the config once before looping to reduce mutex contention
-    let config = crate::config::CONFIG
-        .lock()
-        .map_err(|_| "Failed to acquire config lock")?
-        .as_ref()
-        .ok_or("GraSQL not initialized")?
-        .clone();
 
     for definition in document.definitions.iter() {
         if let Definition::Operation(op) = definition {
@@ -102,6 +97,14 @@ pub fn parse_graphql(query: &str) -> Result<(ParsedQueryInfo, ResolutionRequest)
         Err(e) => return Err(format!("Failed to parse GraphQL query: {}", e)),
     };
 
+    // Get the config once before processing the document to avoid repeated lock acquisitions
+    let config = crate::config::CONFIG
+        .lock()
+        .map_err(|_| "Failed to acquire config lock".to_string())?
+        .as_ref()
+        .ok_or("GraSQL not initialized".to_string())?
+        .clone();
+
     // Check for unsupported features: fragments and directives
     for definition in document.definitions.iter() {
         // Check for fragment definitions
@@ -143,7 +146,7 @@ pub fn parse_graphql(query: &str) -> Result<(ParsedQueryInfo, ResolutionRequest)
     }
 
     // Determine operation kind (now with specific mutation types)
-    let operation_kind = determine_operation_kind(&document)?;
+    let operation_kind = determine_operation_kind(&document, &config)?;
 
     // Extract operation name
     let mut operation_name = None;
@@ -239,14 +242,7 @@ pub fn parse_graphql(query: &str) -> Result<(ParsedQueryInfo, ResolutionRequest)
     // Extract operations
     let mut ops = Vec::new();
 
-    // Get the config once before processing operations to avoid repeated lock acquisitions
-    let config = crate::config::CONFIG
-        .lock()
-        .map_err(|_| "Failed to acquire config lock".to_string())?
-        .as_ref()
-        .ok_or("GraSQL not initialized".to_string())?
-        .clone();
-
+    // Reuse the config we already acquired instead of locking again
     for definition in document.definitions.iter() {
         if let Definition::Operation(op) = definition {
             // For each operation, add the root fields
