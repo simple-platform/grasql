@@ -34,22 +34,31 @@ impl FieldPathExtractor {
         &mut self,
         document: &Document,
     ) -> Result<(HashSet<FieldPath>, HashMap<FieldPath, HashSet<SymbolId>>), String> {
-        // Find the operation
-        let operation = document
-            .operation(None)
-            .map_err(|e| format!("Error finding operation: {}", e))?;
+        // Process all operations in the document
+        let mut has_operation = false;
 
-        // Create empty context for visit
-        let mut ctx = ();
+        for definition in &document.definitions {
+            if let graphql_query::ast::Definition::Operation(operation) = definition {
+                has_operation = true;
 
-        // Visit the selection set to extract table/relationship paths
-        operation.selection_set.visit(&mut ctx, self);
+                // Create empty context for visit
+                let mut ctx = ();
 
-        // Extract tables/relationships from filters
-        self.extract_filter_paths(operation)?;
+                // Visit the selection set to extract table/relationship paths
+                operation.selection_set.visit(&mut ctx, self);
 
-        // Extract columns from selection sets
-        self.extract_columns_from_selection_sets(operation)?;
+                // Extract tables/relationships from filters
+                self.extract_filter_paths(operation)?;
+
+                // Extract columns from selection sets
+                self.extract_columns_from_selection_sets(operation)?;
+            }
+        }
+
+        // Ensure we found at least one operation
+        if !has_operation {
+            return Err("No operation found in document".to_string());
+        }
 
         Ok((
             std::mem::take(&mut self.field_paths),

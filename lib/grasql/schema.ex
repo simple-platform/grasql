@@ -162,7 +162,7 @@ defmodule GraSQL.Schema do
     resolver = get_cached_resolver()
 
     # Process resolution request with resolver
-    process_resolution(resolution_request, resolver, context)
+    raise "Not implemented"
   end
 
   # Get the resolver from cache
@@ -172,14 +172,5 @@ defmodule GraSQL.Schema do
       {:ok, resolver} -> resolver
       {:error, reason} -> raise "Failed to get schema resolver: #{reason}"
     end
-  end
-
-  # Process the resolution request (placeholder for Phase 2 implementation)
-  @spec process_resolution(map(), module(), map()) :: map()
-  defp process_resolution(resolution_request, _resolver, _context) do
-    # Process the resolution request by calling the schema resolver
-    # This is a simple implementation that forwards the request directly
-    # In a more complex implementation, this could perform additional processing
-    resolution_request
   end
 end

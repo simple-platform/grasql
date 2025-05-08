@@ -26,6 +26,12 @@ rustler::atoms! {
     field_paths,
     column_map,
     operation_kind,
+
+    // New atoms for ResolutionRequest
+    query_id,
+    path_dir,
+    path_types,
+    operations,
 }
 
 /// Convert GraphQLOperationKind to Erlang atom

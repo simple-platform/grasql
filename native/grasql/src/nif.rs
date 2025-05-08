@@ -9,7 +9,8 @@ use crate::extraction::convert_paths_to_indices;
 use crate::interning::{get_all_strings, intern_str};
 use crate::parser::parse_graphql;
 use crate::sql::generate_sql;
-use crate::types::{CachedQueryInfo, ResolutionRequest};
+use crate::types::{CachedQueryInfo, FieldPath, GraphQLOperationKind, ResolutionRequest};
+use graphql_query::ast::{Definition, Document, Field, Selection};
 
 use rustler::{Encoder, Env, Error, NifResult, Term};
 use std::collections::HashMap;
@@ -39,10 +40,11 @@ pub fn do_parse_query(env: Env<'_>, query: String) -> rustler::NifResult<Term<'_
         let operation_kind = atoms::operation_kind_to_atom(cached_query_info.operation_kind);
 
         // Create resolution request from cached query info
-        let resolution_request = match create_resolution_request_from_cached(&cached_query_info) {
-            Ok(req) => req,
-            Err(e) => return Err(Error::Term(Box::new(e))),
-        };
+        let resolution_request =
+            match create_resolution_request_from_cached(&cached_query_info, query_id.clone()) {
+                Ok(req) => req,
+                Err(e) => return Err(Error::Term(Box::new(e))),
+            };
 
         // Convert resolution request to Elixir term
         let resolution_term = match convert_resolution_request_to_elixir(env, &resolution_request) {
@@ -98,41 +100,48 @@ fn convert_resolution_request_to_elixir<'a>(
     env: Env<'a>,
     request: &ResolutionRequest,
 ) -> NifResult<Term<'a>> {
-    // Convert HashSet to Vec before encoding
-    let field_paths_vec: Vec<Vec<u32>> = request.field_paths.iter().cloned().collect();
-
-    // Convert HashMap<u32, HashSet<String>> to Vec<(u32, Vec<String>)> for encoding
-    let column_map_vec: Vec<(u32, Vec<String>)> = request
-        .column_map
-        .iter()
-        .map(|(&table_idx, columns)| (table_idx, columns.iter().cloned().collect::<Vec<String>>()))
-        .collect();
-
-    // Get operation kind atom
-    let op_kind_atom = atoms::operation_kind_to_atom(request.operation_kind);
-
+    // Create a map with atom keys for each field in the ResolutionRequest
+    // This will be easier to pattern match in Elixir
     // Create individual terms
-    let field_names_atom = atoms::field_names().encode(env);
-    let field_names_term = request.field_names.encode(env);
-    let field_paths_atom = atoms::field_paths().encode(env);
-    let field_paths_term = field_paths_vec.encode(env);
-    let column_map_atom = atoms::column_map().encode(env);
-    let column_map_term = column_map_vec.encode(env);
-    let operation_kind_atom = atoms::operation_kind().encode(env);
-    let operation_kind_term = op_kind_atom.encode(env);
+    let query_id_atom = atoms::query_id().encode(env);
+    let query_id_term = request.query_id.encode(env);
 
-    // Create an 8-element tuple
+    let strings_atom = atoms::field_names().encode(env); // Reuse field_names atom for strings
+    let strings_term = request.strings.encode(env);
+
+    let paths_atom = atoms::field_paths().encode(env); // Reuse field_paths atom for paths
+    let paths_term = request.paths.encode(env);
+
+    let path_dir_atom = atoms::path_dir().encode(env);
+    let path_dir_term = request.path_dir.encode(env);
+
+    let path_types_atom = atoms::path_types().encode(env);
+    let path_types_term = request.path_types.encode(env);
+
+    let cols_atom = atoms::column_map().encode(env); // Reuse column_map atom for cols
+    let cols_term = request.cols.encode(env);
+
+    let ops_atom = atoms::operations().encode(env);
+    let ops_term = request.ops.encode(env);
+
+    // Create a 14-element tuple with key-value pairs
     Ok(rustler::types::tuple::make_tuple(
         env,
         &[
-            field_names_atom,
-            field_names_term,
-            field_paths_atom,
-            field_paths_term,
-            column_map_atom,
-            column_map_term,
-            operation_kind_atom,
-            operation_kind_term,
+            query_id_atom,
+            query_id_term,
+            strings_atom,
+            strings_term,
+            paths_atom,
+            paths_term,
+            path_dir_atom,
+            path_dir_term,
+            path_types_atom,
+            path_types_term,
+            cols_atom,
+            cols_term,
+            ops_atom,
+            ops_term,
         ],
     ))
 }
@@ -141,7 +150,14 @@ fn convert_resolution_request_to_elixir<'a>(
 #[inline(always)]
 fn create_resolution_request_from_cached(
     cached_info: &CachedQueryInfo,
+    query_id: String,
 ) -> Result<ResolutionRequest, String> {
+    // Extract document for parsing operations
+    let document = match cached_info.document() {
+        Some(doc) => doc,
+        None => return Err("Document not found in cached query".to_string()),
+    };
+
     // Extract field paths from a cached CachedQueryInfo
     let field_paths = match &cached_info.field_paths {
         Some(paths) => paths,
@@ -149,35 +165,146 @@ fn create_resolution_request_from_cached(
     };
 
     // Get all interned strings and create a mapping from SymbolId to index
-    let field_names = get_all_strings();
-    let mut symbol_to_index = HashMap::with_capacity(field_names.len());
+    let strings = get_all_strings();
+    let mut symbol_to_index = HashMap::with_capacity(strings.len());
 
-    for (i, name) in field_names.iter().enumerate() {
+    for (i, name) in strings.iter().enumerate() {
         let symbol_id = intern_str(name);
         symbol_to_index.insert(symbol_id, i as u32);
     }
 
-    // Convert FieldPaths with SymbolIds to indices for Elixir
-    let converted_paths = convert_paths_to_indices(field_paths, &symbol_to_index);
+    // Create the encoded paths, path directory, and path types arrays
+    let mut paths = Vec::new();
+    let mut path_dir = Vec::new();
+    let mut path_types = Vec::new();
+
+    // Sort field paths to ensure deterministic encoding
+    let mut sorted_paths: Vec<&FieldPath> = field_paths.iter().collect();
+    sorted_paths.sort_by_key(|p| {
+        p.iter()
+            .map(|&s| symbol_to_index.get(&s).copied().unwrap_or(0))
+            .collect::<Vec<_>>()
+    });
+
+    // Encode each field path
+    for (path_id, path) in sorted_paths.iter().enumerate() {
+        // Record the current offset in the paths array
+        path_dir.push(paths.len() as u32);
+
+        // Add the path length
+        paths.push(path.len() as u32);
+
+        // Add each path segment as an index into the strings array
+        for &symbol_id in path.iter() {
+            let idx = match symbol_to_index.get(&symbol_id) {
+                Some(&idx) => idx,
+                None => return Err(format!("Symbol not found in mapping: {:?}", symbol_id)),
+            };
+            paths.push(idx);
+        }
+
+        // Determine if this is a table (0) or relationship (1)
+        // Heuristic: paths of length 1 are tables, longer paths are relationships
+        let path_type = if path.len() == 1 { 0 } else { 1 };
+        path_types.push(path_type);
+    }
+
+    // Convert column_usage to the new cols format
+    let mut cols = Vec::new();
 
     // Extract column usage from cached query info
-    let column_map = match &cached_info.column_usage {
-        Some(column_usage) => {
-            // Convert column usage to table indices with column strings
-            crate::extraction::convert_column_usage_to_indices(
-                column_usage,
-                field_paths,
-                &symbol_to_index,
-            )
+    if let Some(column_usage) = &cached_info.column_usage {
+        for path in sorted_paths.iter() {
+            // Skip paths that aren't tables (no columns)
+            if path.len() != 1 {
+                continue;
+            }
+
+            // Get the table index (first element of path)
+            let table_idx = match symbol_to_index.get(&path[0]) {
+                Some(&idx) => idx,
+                None => return Err(format!("Table symbol not found in mapping: {:?}", path[0])),
+            };
+
+            // Check if there are columns for this table
+            if let Some(columns) = column_usage.get(path) {
+                // Convert column SymbolIds to indices
+                let column_indices: Vec<u32> = columns
+                    .iter()
+                    .filter_map(|&symbol_id| symbol_to_index.get(&symbol_id).copied())
+                    .collect();
+
+                // Only add if there are columns to resolve
+                if !column_indices.is_empty() {
+                    cols.push((table_idx, column_indices));
+                }
+            }
         }
-        None => HashMap::new(), // Default empty column map if no column usage info
+    }
+
+    // Get the current configuration for operation prefixes
+    let config = match crate::config::CONFIG.lock() {
+        Ok(cfg) => match &*cfg {
+            Some(c) => c.clone(),
+            None => return Err("GraSQL not initialized".to_string()),
+        },
+        Err(_) => return Err("Failed to acquire config lock".to_string()),
     };
 
+    // Extract operations from document
+    let mut ops = Vec::new();
+
+    // Process each operation definition
+    for definition in document.definitions.iter() {
+        if let Definition::Operation(op) = definition {
+            // For each operation, add the root fields
+            for selection in op.selection_set.selections.iter() {
+                if let Selection::Field(field) = selection {
+                    let field_symbol = intern_str(field.name);
+                    let field_idx = match symbol_to_index.get(&field_symbol) {
+                        Some(&idx) => idx,
+                        None => {
+                            return Err(format!(
+                                "Field symbol not found in mapping: {}",
+                                field.name
+                            ))
+                        }
+                    };
+
+                    // Determine operation type based on operation kind and field name
+                    let op_type = match op.operation {
+                        graphql_query::ast::OperationKind::Query => 0,
+                        graphql_query::ast::OperationKind::Mutation => {
+                            // Check field name against configured prefixes to determine specific mutation type
+                            if field.name.starts_with(&config.insert_prefix) {
+                                1 // Insert mutation
+                            } else if field.name.starts_with(&config.update_prefix) {
+                                2 // Update mutation
+                            } else if field.name.starts_with(&config.delete_prefix) {
+                                3 // Delete mutation
+                            } else {
+                                // Default to insert if no prefix match
+                                1
+                            }
+                        }
+                        graphql_query::ast::OperationKind::Subscription => 4,
+                    };
+
+                    ops.push((field_idx, op_type));
+                }
+            }
+        }
+    }
+
+    // Create resolution request
     Ok(ResolutionRequest {
-        field_names,
-        field_paths: converted_paths,
-        column_map,
-        operation_kind: cached_info.operation_kind,
+        query_id,
+        strings,
+        paths,
+        path_dir,
+        path_types,
+        cols,
+        ops,
     })
 }
 
