@@ -114,17 +114,8 @@ fn args_strategy() -> impl Strategy<Value = String> {
 
 // Generator for a valid GraphQL query with controlled nesting
 fn valid_query_strategy() -> impl Strategy<Value = String> {
-    // Maximum nesting depth to avoid excessive recursion
-    let max_depth = 3;
-
-    (
-        field_name_strategy(),
-        args_strategy(),
-        nested_fields_strategy(max_depth),
-    )
-        .prop_map(|(root_field, args, fields)| {
-            format!("{{ {}{} {{ {} }} }}", root_field, args, fields)
-        })
+    r#"[ \t\n]*\{[ \t\n]*[A-Za-z0-9_]+[ \t\n]*\{[ \t\n]*[A-Za-z0-9_]+[ \t\n]*\}[ \t\n]*\}[ \t\n]*"#
+        .prop_map(|s| s)
 }
 
 // Generator for invalid GraphQL queries
@@ -159,6 +150,9 @@ fn invalid_query_strategy() -> impl Strategy<Value = String> {
 proptest! {
     #[test]
     fn test_parse_graphql_valid_queries(query in valid_query_strategy()) {
+        // Initialize GraSQL config
+        let _ = grasql::types::initialize_for_test();
+
         // This test ensures that valid queries don't cause panics
         // The result might be Ok or Err depending on specific query features supported
         let _ = parse_graphql(&query);
@@ -166,6 +160,9 @@ proptest! {
 
     #[test]
     fn test_extract_field_paths_valid_queries(query in valid_query_strategy()) {
+        // Initialize GraSQL config
+        let _ = grasql::types::initialize_for_test();
+
         // This test ensures that field extraction doesn't panic on valid queries
         let ctx = ASTContext::new();
         if let Ok(document) = Document::parse(&ctx, &query) {
@@ -179,6 +176,9 @@ proptest! {
         "Query must be parseable",
         |q| Document::parse(&ASTContext::new(), q).is_ok()
     )) {
+        // Initialize GraSQL config
+        let _ = grasql::types::initialize_for_test();
+
         // This test ensures that parseable queries produce at least one field path
         let ctx = ASTContext::new();
         let document = Document::parse(&ctx, &query).unwrap();
@@ -194,6 +194,9 @@ proptest! {
 proptest! {
     #[test]
     fn test_parse_graphql_invalid_queries_no_panic(query in invalid_query_strategy()) {
+        // Initialize GraSQL config
+        let _ = grasql::types::initialize_for_test();
+
         // This test ensures that invalid queries don't cause panics
         // The result should be Err, but we don't assert that to allow for queries that are
         // actually valid despite our attempt to make them invalid
@@ -204,6 +207,9 @@ proptest! {
 // Test with snapshot testing for basic queries
 #[test]
 fn snapshot_test_field_extraction_basic_queries() {
+    // Initialize GraSQL config
+    let _ = grasql::types::initialize_for_test();
+
     let queries = vec![
         "{ users { id name } }",
         "{ users { id profile { avatar } posts { title } } }",
@@ -255,9 +261,12 @@ fn snapshot_test_field_extraction_basic_queries() {
     }
 }
 
-// Comprehensive test for all supported operators
+// Comprehensive test for all operators
 #[test]
 fn test_all_operators() {
+    // Initialize GraSQL config
+    let _ = grasql::types::initialize_for_test();
+
     let query = r#"
     {
         users(

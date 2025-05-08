@@ -1,6 +1,6 @@
 use crate::interning::intern_str;
 use crate::types::{FieldPath, SymbolId};
-use graphql_query::ast::{Document, Field, OperationDefinition, Value};
+use graphql_query::ast::{Document, Field, ObjectValue, OperationDefinition, Value};
 use graphql_query::visit::{VisitFlow, VisitInfo, VisitNode, Visitor};
 use std::collections::{HashMap, HashSet};
 
@@ -154,10 +154,28 @@ impl FieldPathExtractor {
             self.field_paths.insert(self.current_path.clone());
         }
 
-        // Process "where" argument if it exists
+        // Get config to check for mutation prefixes
+        let config = match crate::config::CONFIG.lock() {
+            Ok(cfg_guard) => match &*cfg_guard {
+                Some(cfg) => cfg.clone(),
+                None => return Err("GraSQL not initialized; missing config".to_string()),
+            },
+            Err(_) => return Err("Failed to acquire config lock".to_string()),
+        };
+
+        // Process arguments depending on operation type
         for arg in &field.arguments.children {
             if arg.name == "where" {
+                // Extract paths from "where" condition (for queries and mutations)
                 self.extract_filter_paths_from_value(&arg.value)?;
+            } else if field.name.starts_with(&config.insert_prefix)
+                && (arg.name == "objects" || arg.name == "object")
+            {
+                // Extract column information from INSERT mutation objects
+                self.extract_mutation_objects(&arg.value, arg.name == "object")?;
+            } else if field.name.starts_with(&config.update_prefix) && arg.name == "_set" {
+                // Extract column information from UPDATE mutation _set parameter
+                self.extract_update_set(&arg.value)?;
             }
         }
 
@@ -172,6 +190,172 @@ impl FieldPathExtractor {
         self.current_path.pop();
 
         Ok(())
+    }
+
+    /// Extract mutation object fields for INSERT operations
+    ///
+    /// This method processes the "objects" or "object" parameter in INSERT mutations and
+    /// extracts column names from all objects. It handles both single objects and arrays of objects,
+    /// as well as variable references.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The Value of the objects parameter, either an Object, List of Objects, or Variable
+    /// * `is_single_object` - Whether this is an "object" parameter (true) or "objects" parameter (false)
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` if processing was successful
+    /// * `Err(String)` with an error message if an error occurred
+    ///
+    /// # Example
+    ///
+    /// For a mutation like:
+    /// ```graphql
+    /// mutation {
+    ///   insert_users(objects: { name: "John", email: "john@example.com" }) {
+    ///     returning { id }
+    ///   }
+    /// }
+    /// ```
+    ///
+    /// This method will extract "name" and "email" as columns for the "users" table.
+    fn extract_mutation_objects(
+        &mut self,
+        value: &Value,
+        is_single_object: bool,
+    ) -> Result<(), String> {
+        match value {
+            Value::Object(obj) => {
+                // Extract columns from this object
+                self.extract_object_columns(obj)?;
+                // Make sure this path is marked as a table/relationship
+                self.field_paths.insert(self.current_path.clone());
+                Ok(())
+            }
+            Value::List(list) => {
+                if is_single_object {
+                    return Err("Expected a single object but got an array".to_string());
+                }
+
+                // Process each item in the list (batch case)
+                for item in &list.children {
+                    self.extract_mutation_objects(item, true)?;
+                }
+                // Make sure this path is marked as a table/relationship
+                self.field_paths.insert(self.current_path.clone());
+                Ok(())
+            }
+            Value::Variable(_var_name) => {
+                // For variables, we trust the user knows what they're doing
+                // We don't attempt to extract column information from variables
+
+                // Even though we can't extract columns from the variable,
+                // we still need to add the current path to field_paths
+                // so that the table/relationship is recognized
+                self.field_paths.insert(self.current_path.clone());
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// Extract columns from an object value
+    ///
+    /// Extracts each field name in the object as a column and adds it to
+    /// the column_usage map for the current table path.
+    ///
+    /// # Arguments
+    ///
+    /// * `obj` - The ObjectValue to extract columns from
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` if processing was successful
+    /// * `Err(String)` with an error message if an error occurred
+    fn extract_object_columns(&mut self, obj: &ObjectValue) -> Result<(), String> {
+        for field in &obj.children {
+            let column_id = intern_str(field.name);
+
+            // Get or create the column set for the current table
+            let columns = self
+                .column_usage
+                .entry(self.current_path.clone())
+                .or_insert_with(HashSet::new);
+
+            // Add this column to the set
+            columns.insert(column_id);
+
+            // TODO: Recursive handling of nested objects if needed
+            // This would require understanding the schema structure
+        }
+        Ok(())
+    }
+
+    /// Extract columns from _set parameter in UPDATE mutations
+    ///
+    /// This method processes the "_set" parameter in UPDATE mutations and
+    /// extracts each field name as a column that needs to be updated.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The Value of the _set parameter, typically an Object or Variable
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` if processing was successful
+    /// * `Err(String)` with an error message if an error occurred
+    ///
+    /// # Example
+    ///
+    /// For a mutation like:
+    /// ```graphql
+    /// mutation {
+    ///   update_users(
+    ///     where: { id: { _eq: 1 } },
+    ///     _set: { name: "Updated Name", status: "active" }
+    ///   ) {
+    ///     returning { id }
+    ///   }
+    /// }
+    /// ```
+    ///
+    /// This method will extract "name" and "status" as columns for the "users" table.
+    fn extract_update_set(&mut self, value: &Value) -> Result<(), String> {
+        match value {
+            Value::Object(obj) => {
+                // Extract columns from the _set object
+                for field in &obj.children {
+                    let column_id = intern_str(field.name);
+
+                    // Get or create the column set for the current table
+                    let columns = self
+                        .column_usage
+                        .entry(self.current_path.clone())
+                        .or_insert_with(HashSet::new);
+
+                    // Add this column to the set
+                    columns.insert(column_id);
+                }
+                // Make sure this path is marked as a table/relationship
+                self.field_paths.insert(self.current_path.clone());
+                Ok(())
+            }
+            Value::Variable(_var_name) => {
+                // For variables, we trust the user knows what they're doing
+                // We don't attempt to extract column information from variables
+
+                // Even though we can't extract columns from the variable,
+                // we still need to add the current path to field_paths
+                // so that the table/relationship is recognized
+                self.field_paths.insert(self.current_path.clone());
+                Ok(())
+            }
+            _ => {
+                // _set should always be an object
+                Err("_set parameter must be an object".to_string())
+            }
+        }
     }
 
     /// Extract filter paths from a value (recursively for objects)
@@ -349,8 +533,15 @@ mod tests {
     use crate::interning::intern_str;
     use graphql_query::ast::{ASTContext, Document, ParseNode};
 
+    fn initialize_for_test() {
+        let _ = crate::types::initialize_for_test();
+    }
+
     #[test]
     fn test_field_extraction_simple() {
+        // Initialize GraSQL config
+        initialize_for_test();
+
         let query = "{ users { id name email } }";
         let ctx = ASTContext::new();
         let document = Document::parse(&ctx, query).unwrap();
@@ -370,6 +561,9 @@ mod tests {
 
     #[test]
     fn test_field_extraction_with_relationships() {
+        // Initialize GraSQL config
+        initialize_for_test();
+
         let query = "{ users { id profile { avatar } posts { title } } }";
         let ctx = ASTContext::new();
         let document = Document::parse(&ctx, query).unwrap();
@@ -402,6 +596,9 @@ mod tests {
 
     #[test]
     fn test_field_extraction_with_filters() {
+        // Initialize GraSQL config
+        initialize_for_test();
+
         let query = "{ users(where: { profile: { avatar: \"something\" } }) { id } }";
         let ctx = ASTContext::new();
         let document = Document::parse(&ctx, query).unwrap();
