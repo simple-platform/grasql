@@ -156,7 +156,7 @@ fn convert_resolution_request_to_elixir<'a>(
 #[rustler::nif]
 pub fn do_generate_sql<'a>(
     env: Env<'a>,
-    _resolution_response: Term<'a>,
+    resolution_response: Term<'a>,
 ) -> rustler::NifResult<Term<'a>> {
     // Get the current configuration
     let _config = match CONFIG.lock() {
@@ -167,19 +167,61 @@ pub fn do_generate_sql<'a>(
         Err(_) => return Err(Error::Term(Box::new("Failed to acquire config lock"))),
     };
 
-    // Try to get from cache
-    // let cached_query_info = match get_from_cache(&resolution_response.query_id) {
-    //     Some(info) => info,
-    //     None => return Err(Error::Term(Box::new("Query not found in cache"))),
-    // };
+    // Decode ResolutionResponse from Elixir term
+    let response = decode_resolution_response(env, resolution_response)?;
 
-    // Generate SQL using the cached query info
-    // Note: We're not using the schema parameter yet - this will be implemented in Phase 3
-    // For now, we just store the schema information and pass it along
-    // let sql = generate_sql(&cached_query_info);
+    // Generate SQL using the cached query info and resolution response
+    // Note: This is a stub implementation - will be replaced in Phase 3
+    let _ = response; // Use the response to avoid unused variable warning
 
     // Create an empty list for parameters
     let params: Vec<Term<'a>> = Vec::new();
 
     Ok((atoms::ok(), "SELECT 1", params).encode(env))
+}
+
+/// Decode ResolutionResponse from Elixir term
+fn decode_resolution_response<'a>(
+    env: Env<'a>,
+    term: Term<'a>,
+) -> NifResult<crate::types::ResolutionResponse> {
+    // Extract fields from the map
+    let query_id: String = term.map_get(atoms::query_id())?.decode()?;
+    let strings: Vec<String> = term
+        .map_get(&rustler::types::atom::Atom::from_str(env, "strings")?)?
+        .decode()?;
+    let tables: Vec<(u32, u32, u32)> = term
+        .map_get(&rustler::types::atom::Atom::from_str(env, "tables")?)?
+        .decode()?;
+
+    // Decode relationships with source and target column arrays
+    let rels: Vec<(u32, u32, u8, i32, Vec<u32>, Vec<u32>)> = term
+        .map_get(&rustler::types::atom::Atom::from_str(env, "rels")?)?
+        .decode()?;
+
+    let joins: Vec<(u32, u32, Vec<u32>, Vec<u32>)> = term
+        .map_get(&rustler::types::atom::Atom::from_str(env, "joins")?)?
+        .decode()?;
+    let path_map: Vec<(u8, u32)> = term
+        .map_get(&rustler::types::atom::Atom::from_str(env, "path_map")?)?
+        .decode()?;
+    let cols: Vec<(u32, u32, u32, i32)> = term
+        .map_get(&rustler::types::atom::Atom::from_str(env, "cols")?)?
+        .decode()?;
+
+    // Decode operations
+    let ops: Vec<(u32, u8)> = term
+        .map_get(&rustler::types::atom::Atom::from_str(env, "ops")?)?
+        .decode()?;
+
+    Ok(crate::types::ResolutionResponse {
+        query_id,
+        strings,
+        tables,
+        rels,
+        joins,
+        path_map,
+        cols,
+        ops,
+    })
 }

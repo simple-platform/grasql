@@ -157,6 +157,86 @@ impl ResolutionRequest {
     }
 }
 
+/// ResolutionResponse represents the resolved schema information.
+/// It is sent from Elixir back to Rust for SQL generation.
+#[derive(Debug, Clone)]
+pub struct ResolutionResponse {
+    /// Unique query identifier matching the request.
+    pub query_id: String,
+
+    /// Shared string table for all schema elements (table names, column names, etc.)
+    /// All other fields reference strings by their index in this array.
+    pub strings: Vec<String>,
+
+    /// Tables information, each entry containing:
+    /// (schema_idx, name_idx, typename_idx)
+    /// - schema_idx: Index into strings for schema name (e.g., "public")
+    /// - name_idx: Index into strings for table name (e.g., "users")
+    /// - typename_idx: Index into strings for GraphQL type name (e.g., "User")
+    /// Indexed by table_id, which is used in other parts of the response.
+    pub tables: Vec<(u32, u32, u32)>,
+
+    /// Relationships information, each entry containing:
+    /// (src_table_idx, target_table_idx, type_code, join_table_idx, [src_col_idxs], [tgt_col_idxs])
+    /// - src_table_idx: Index into tables array for source table
+    /// - target_table_idx: Index into tables array for target table
+    /// - type_code: 0=belongs_to, 1=has_one, 2=has_many, 3=many_to_many
+    /// - join_table_idx: Index into joins array, or -1 if no join table
+    /// - src_col_idxs: Array of indices into strings array for source column names
+    /// - tgt_col_idxs: Array of indices into strings array for target column names
+    /// Indexed by relationship_id, which is used in path_map.
+    pub rels: Vec<(u32, u32, u8, i32, Vec<u32>, Vec<u32>)>,
+
+    /// Join tables information (for many-to-many relationships), each entry containing:
+    /// (schema_idx, name_idx, [src_col_idxs], [tgt_col_idxs])
+    /// - schema_idx: Index into strings for schema name
+    /// - name_idx: Index into strings for join table name
+    /// - src_col_idxs: Indices into strings for source column names
+    /// - tgt_col_idxs: Indices into strings for target column names
+    /// Indexed by join_table_id, which is referenced in rels.
+    pub joins: Vec<(u32, u32, Vec<u32>, Vec<u32>)>,
+
+    /// Path mapping from path_id to entity (table or relationship).
+    /// Format: [(entity_type, entity_idx), ...]
+    /// - entity_type: 0=table, 1=relationship
+    /// - entity_idx: Index into tables or rels array based on entity_type
+    /// Indexed by path_id from ResolutionRequest, provides O(1) lookup.
+    pub path_map: Vec<(u8, u32)>,
+
+    /// Columns information, each entry containing:
+    /// (table_idx, name_idx, type_idx, default_val_idx)
+    /// - table_idx: Index into tables array
+    /// - name_idx: Index into strings for column name
+    /// - type_idx: Index into strings for SQL type
+    /// - default_val_idx: Index into strings for default value, or -1 if none
+    /// Provides O(1) lookup of column information.
+    pub cols: Vec<(u32, u32, u32, i32)>,
+
+    /// Operations contained in the GraphQL document.
+    /// Format: [(root_field_idx, operation_type), ...]
+    /// root_field_idx is an index into strings array for the root field name.
+    /// operation_type: 0=query, 1=insert, 2=update, 3=delete
+    /// Preserves operation order without depending on operation names.
+    pub ops: Vec<(u32, u8)>,
+}
+
+impl ResolutionResponse {
+    /// Create a new empty resolution response
+    #[inline(always)]
+    pub fn new() -> Self {
+        ResolutionResponse {
+            query_id: String::new(),
+            strings: Vec::new(),
+            tables: Vec::new(),
+            rels: Vec::new(),
+            joins: Vec::new(),
+            path_map: Vec::new(),
+            cols: Vec::new(),
+            ops: Vec::new(),
+        }
+    }
+}
+
 /// Thread-safe version of ParsedQueryInfo for caching
 ///
 /// # Safety and Threading Model
