@@ -122,6 +122,12 @@ pub fn insert_raw_for_test(query_id: &str, cached_info: CachedQueryInfo) {
 /// includes the ResolutionRequest, and stores it in the global query cache
 /// using the query ID as the key.
 ///
+/// # Performance Considerations
+///
+/// Storing the ResolutionRequest in the cache increases memory usage but
+/// eliminates the need to regenerate it for subsequent queries, improving
+/// overall performance for repeated queries.
+///
 /// # Memory Safety
 ///
 /// The conversion to CachedQueryInfo properly preserves all necessary references
