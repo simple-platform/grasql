@@ -80,8 +80,15 @@ defmodule GraSQL do
       # Variable reference
       {1, var_name} ->
         case Map.fetch(variables, var_name) do
-          {:ok, value} -> value
-          :error -> {:error, {:missing_variable, var_name}}
+          {:ok, value} ->
+            value
+          :error ->
+            variables
+            |> Map.fetch(String.to_atom(to_string(var_name)))
+            |> case do
+              {:ok, value} -> value
+              :error       -> {:error, {:missing_variable, var_name}}
+            end
         end
     end)
   end
