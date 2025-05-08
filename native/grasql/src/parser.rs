@@ -44,8 +44,10 @@ fn determine_operation_kind(
                         } else if field_name.starts_with(&config.delete_prefix) {
                             primary_kind = GraphQLOperationKind::DeleteMutation;
                         } else {
-                            primary_kind = GraphQLOperationKind::InsertMutation;
-                            // Default
+                            return Err(format!(
+                                "Mutation root '{}' matches none of the configured prefixes",
+                                field.name
+                            ));
                         }
                     }
                 }
@@ -265,8 +267,10 @@ pub fn parse_graphql(query: &str) -> Result<(ParsedQueryInfo, ResolutionRequest)
                             } else if field.name.starts_with(&config.delete_prefix) {
                                 3 // Delete mutation
                             } else {
-                                // Default to insert if no prefix match
-                                1
+                                return Err(format!(
+                                    "Mutation root '{}' matches none of the configured prefixes",
+                                    field.name
+                                ));
                             }
                         }
                         graphql_query::ast::OperationKind::Subscription => 4,

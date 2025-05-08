@@ -339,11 +339,11 @@ defmodule GraSQL.Schema do
   end
 
   defp find_parent_path_with_offset(path_id, paths, path_dir, path_types, current_offset) do
-    current_length = Enum.at(paths, current_offset, 0)
+    current_path_len = Enum.at(paths, current_offset, 0)
 
     # Get path elements except the last one (which should be the relationship field)
     current_path_elements =
-      for i <- 0..(current_length - 2) do
+      for i <- 0..(current_path_len - 2) do
         get_path_element(paths, path_dir, path_id, i)
       end
 
@@ -384,15 +384,15 @@ defmodule GraSQL.Schema do
   end
 
   defp check_path_match(table_path_id, current_path_elements, paths, path_dir, table_offset) do
-    table_length = Enum.at(paths, table_offset, 0)
+    table_path_len = Enum.at(paths, table_offset, 0)
 
     # Check if this could be a parent (has same length as parent path)
-    if table_length != length(current_path_elements) do
+    if table_path_len != length(current_path_elements) do
       false
     else
       # Compare all elements
       table_path_elements =
-        for i <- 0..(table_length - 1) do
+        for i <- 0..(table_path_len - 1) do
           get_path_element(paths, path_dir, table_path_id, i)
         end
 
@@ -410,10 +410,10 @@ defmodule GraSQL.Schema do
     if offset == -1 do
       -1
     else
-      length = Enum.at(paths, offset, 0)
+      path_len = Enum.at(paths, offset, 0)
 
       # Ensure the index is valid
-      if index >= 0 and index < length do
+      if index >= 0 and index < path_len do
         # +1 to skip the length field at the beginning of the path
         Enum.at(paths, offset + 1 + index, -1)
       else
@@ -647,9 +647,8 @@ defmodule GraSQL.Schema do
   @spec build_tables_indexed(map(), map()) :: list(tuple())
   defp build_tables_indexed(tables, string_mapping) do
     tables
-    |> Map.values()
-    |> Enum.with_index()
-    |> Enum.map(fn {table, _idx} ->
+    |> Enum.sort_by(fn {path_id, _} -> path_id end)
+    |> Enum.map(fn {_, table} ->
       schema_idx = Map.get(string_mapping, table.schema)
       name_idx = Map.get(string_mapping, table.name)
 
@@ -672,11 +671,14 @@ defmodule GraSQL.Schema do
     tables_with_index = build_table_index_mapping(relationships)
 
     # Process relationships
-    {rels, joins} =
+    {rels, {joins, _}} =
       relationships
       |> Map.values()
       |> Enum.with_index()
-      |> Enum.map_reduce([], &process_relationship(&1, &2, tables_with_index, string_mapping))
+      |> Enum.map_reduce(
+        {[], 0},
+        &process_relationship(&1, &2, tables_with_index, string_mapping)
+      )
 
     # Reverse joins to maintain original order since we've been prepending
     {rels, Enum.reverse(joins)}
@@ -696,11 +698,16 @@ defmodule GraSQL.Schema do
   # Process a single relationship
   @spec process_relationship(
           {GraSQL.Schema.Relationship.t(), integer()},
-          list(tuple()),
+          {list(tuple()), integer()},
           map(),
           map()
-        ) :: {tuple(), list(tuple())}
-  defp process_relationship({rel, _rel_idx}, join_acc, tables_with_index, string_mapping) do
+        ) :: {tuple(), {list(tuple()), integer()}}
+  defp process_relationship(
+         {rel, _rel_idx},
+         {join_acc, join_idx},
+         tables_with_index,
+         string_mapping
+       ) do
     # Get table indices
     source_table_idx =
       Map.get(tables_with_index, {rel.source_table.schema, rel.source_table.name}, 0)
@@ -716,11 +723,12 @@ defmodule GraSQL.Schema do
     tgt_col_idxs = columns_to_indices(rel.target_columns, string_mapping)
 
     # Handle join table if present
-    {join_table_idx, new_join_acc} = process_join_table(rel.join_table, join_acc, string_mapping)
+    {join_table_idx, {new_join_acc, new_join_idx}} =
+      process_join_table(rel.join_table, {join_acc, join_idx}, string_mapping)
 
     # Return relationship entry and updated joins
     {{source_table_idx, target_table_idx, type_code, join_table_idx, src_col_idxs, tgt_col_idxs},
-     new_join_acc}
+     {new_join_acc, new_join_idx}}
   end
 
   # Convert relationship type to numeric code
@@ -744,13 +752,13 @@ defmodule GraSQL.Schema do
   end
 
   # Process join table for a relationship
-  @spec process_join_table(GraSQL.Schema.JoinTable.t() | nil, list(tuple()), map()) ::
-          {integer(), list(tuple())}
-  defp process_join_table(nil, join_acc, _string_mapping) do
-    {-1, join_acc}
+  @spec process_join_table(GraSQL.Schema.JoinTable.t() | nil, {list(tuple()), integer()}, map()) ::
+          {integer(), {list(tuple()), integer()}}
+  defp process_join_table(nil, {join_acc, join_idx}, _string_mapping) do
+    {-1, {join_acc, join_idx}}
   end
 
-  defp process_join_table(join, join_acc, string_mapping) do
+  defp process_join_table(join, {join_acc, join_idx}, string_mapping) do
     # Create join table entry
     schema_idx = Map.get(string_mapping, join.schema)
     name_idx = Map.get(string_mapping, join.name)
@@ -762,8 +770,8 @@ defmodule GraSQL.Schema do
     # Create the join table entry tuple
     join_entry = create_join_entry(schema_idx, name_idx, src_join_col_idxs, tgt_join_col_idxs)
 
-    # Add to joins and return index - prepend for O(1) instead of append O(n)
-    {length(join_acc), [join_entry | join_acc]}
+    # Add to joins and return index - use current index instead of calculating length
+    {join_idx, {[join_entry | join_acc], join_idx + 1}}
   end
 
   # Create a join table entry tuple
@@ -779,11 +787,13 @@ defmodule GraSQL.Schema do
     # to ensure deterministic indexing regardless of path_id values
     table_maps =
       tables
+      |> Enum.sort_by(fn {path_id, _} -> path_id end)
       |> Enum.with_index()
       |> Enum.map(fn {{path_id, _table}, idx} -> {path_id, {0, idx}} end)
 
     relationship_maps =
       relationships
+      |> Enum.sort_by(fn {path_id, _} -> path_id end)
       |> Enum.with_index()
       |> Enum.map(fn {{path_id, _rel}, idx} -> {path_id, {1, idx}} end)
 
