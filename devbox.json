@@ -5,7 +5,7 @@
     "elixir": "1.18.1",
     "beam27Packages.elixir-ls": "0.27.2",
     "rustup": "1.27.1",
-    "bun": "1.2.8",
+    "bun": "1.2.12",
     "nodejs": "23.11.0",
     "flatbuffers": "25.1.24",
     "gh": "2.72.0"
