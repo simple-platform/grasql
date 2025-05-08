@@ -28,7 +28,7 @@ pub use cache::{add_to_cache, generate_query_id, get_from_cache};
 
 // Re-export test helpers (available for both internal and integration tests)
 #[cfg(any(test, feature = "test-utils"))]
-pub use cache::insert_raw_for_test;
+pub use cache::{add_to_cache_with_request, insert_raw_for_test};
 
 // Module initialization
 fn load(_env: rustler::Env, opts: rustler::Term) -> bool {

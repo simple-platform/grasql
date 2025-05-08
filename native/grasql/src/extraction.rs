@@ -129,8 +129,37 @@ impl FieldPathExtractor {
                         // Add this column to the set
                         columns.insert(column_id);
                     } else {
-                        // This is a nested relationship, process recursively
-                        self.process_field_and_columns(child_field)?;
+                        // Handle common GraphQL patterns like aggregations, returning clauses, etc.
+                        match child_field.name {
+                            "aggregate" | "returning" | "nodes" => {
+                                // These are special fields that contain columns for the parent table
+                                // Process them in the context of the current table
+                                for selection in &child_field.selection_set.selections {
+                                    if let Some(grandchild_field) = selection.field() {
+                                        if grandchild_field.selection_set.is_empty() {
+                                            // This is a column for aggregation
+                                            let column_id = intern_str(grandchild_field.name);
+
+                                            // Get or create the column set for this table
+                                            let columns = self
+                                                .column_usage
+                                                .entry(self.current_path.clone())
+                                                .or_insert_with(HashSet::new);
+
+                                            // Add this column to the set
+                                            columns.insert(column_id);
+                                        }
+                                    }
+                                }
+
+                                // Also process the special field as a relationship
+                                self.process_field_and_columns(child_field)?;
+                            }
+                            _ => {
+                                // This is a nested relationship, process recursively
+                                self.process_field_and_columns(child_field)?;
+                            }
+                        }
                     }
                 }
             }
@@ -383,15 +412,65 @@ impl FieldPathExtractor {
                     let field_id = intern_str(field.name);
                     self.current_path.push(field_id);
 
-                    // Add to our set if this is a nested object (potential relationship)
-                    // This is a heuristic - we assume that nested objects in filters
-                    // represent relationships
-                    if let Value::Object(_) = field.value {
-                        self.field_paths.insert(self.current_path.clone());
-                    }
+                    // Process based on value type
+                    match &field.value {
+                        Value::Object(inner_obj) => {
+                            // This is a nested object which could be either:
+                            // 1. A relationship: posts: { title: { _eq: ... } }
+                            // 2. An operator: name: { _eq: ... }
 
-                    // Recursively process nested objects
-                    self.extract_filter_paths_from_value(&field.value)?;
+                            // Check if this field itself is directly an operator (starts with '_')
+                            let is_direct_operator = field.name.starts_with('_');
+
+                            // Check if this object contains operator fields
+                            let contains_operator_fields = inner_obj
+                                .children
+                                .iter()
+                                .any(|child| child.name.starts_with('_'));
+
+                            // If this is not a direct operator field, it could be a relationship
+                            // Add it to field_paths regardless of whether it contains operator fields
+                            if !is_direct_operator {
+                                self.field_paths.insert(self.current_path.clone());
+                            }
+
+                            // If it contains operator fields, also handle it as a column
+                            if contains_operator_fields && self.current_path.len() > 1 {
+                                // Get the table path (all but last element)
+                                let mut table_path = FieldPath::new();
+                                for i in 0..self.current_path.len() - 1 {
+                                    table_path.push(self.current_path[i]);
+                                }
+
+                                // Add this column to the table's columns
+                                let columns = self
+                                    .column_usage
+                                    .entry(table_path)
+                                    .or_insert_with(HashSet::new);
+
+                                columns.insert(field_id);
+                            }
+
+                            // Process nested objects recursively
+                            self.extract_filter_paths_from_value(&field.value)?;
+                        }
+                        _ => {
+                            // Simple value - add as column to the parent path (without current field)
+                            if self.current_path.len() > 1 {
+                                let mut table_path = FieldPath::new();
+                                for i in 0..self.current_path.len() - 1 {
+                                    table_path.push(self.current_path[i]);
+                                }
+
+                                let columns = self
+                                    .column_usage
+                                    .entry(table_path)
+                                    .or_insert_with(HashSet::new);
+
+                                columns.insert(field_id);
+                            }
+                        }
+                    }
 
                     // Remove field from path
                     self.current_path.pop();

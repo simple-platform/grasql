@@ -209,8 +209,10 @@ pub fn parse_graphql(query: &str) -> Result<(ParsedQueryInfo, ResolutionRequest)
 
     // Convert column_usage to the new cols format
     let mut cols = Vec::new();
+
+    // First, handle single tables (path.len() == 1)
     for path in field_paths.iter() {
-        // Skip paths that aren't tables (no columns)
+        // Only process paths that are tables (length 1)
         if path.len() != 1 {
             continue;
         }
@@ -237,6 +239,128 @@ pub fn parse_graphql(query: &str) -> Result<(ParsedQueryInfo, ResolutionRequest)
             // Only add if there are columns to resolve
             if !column_indices.is_empty() {
                 cols.push((table_idx, column_indices));
+            }
+        }
+    }
+
+    // Now handle relationship target tables
+    // For each relationship path (path.len() > 1), extract columns for the target table
+    for path in field_paths.iter() {
+        // Skip paths that are not relationships
+        if path.len() <= 1 {
+            continue;
+        }
+
+        // Get the target table name (last element of the path)
+        let target_table_symbol = path[path.len() - 1];
+        let target_table_idx = symbol_to_index
+            .get(&target_table_symbol)
+            .copied()
+            .ok_or_else(|| format!("symbol {:?} missing from mapping", target_table_symbol))?;
+
+        // Check if there are columns for this relationship path
+        if let Some(columns) = column_usage.get(path) {
+            // Convert column SymbolIds to indices
+            let column_indices: Vec<u32> = columns
+                .iter()
+                .map(|&symbol_id| {
+                    symbol_to_index
+                        .get(&symbol_id)
+                        .copied()
+                        .ok_or_else(|| format!("symbol {:?} missing from mapping", symbol_id))
+                })
+                .collect::<Result<Vec<u32>, String>>()?;
+
+            // Only add if there are columns to resolve
+            if !column_indices.is_empty() {
+                // Check if this table already has columns
+                if let Some(existing_entry) =
+                    cols.iter_mut().find(|(idx, _)| *idx == target_table_idx)
+                {
+                    // Merge columns (avoiding duplicates)
+                    for col_idx in column_indices {
+                        if !existing_entry.1.contains(&col_idx) {
+                            existing_entry.1.push(col_idx);
+                        }
+                    }
+                } else {
+                    // Add new entry for this table
+                    cols.push((target_table_idx, column_indices));
+                }
+            }
+        }
+    }
+
+    // Special handling for mutation operations
+    // We need to ensure that all required columns for mutations (especially in returning clauses)
+    // are properly included
+    if matches!(
+        operation_kind,
+        GraphQLOperationKind::InsertMutation
+            | GraphQLOperationKind::UpdateMutation
+            | GraphQLOperationKind::DeleteMutation
+    ) {
+        // Extract columns from returning clauses
+        for definition in document.definitions.iter() {
+            if let Definition::Operation(op) = definition {
+                for selection in op.selection_set.selections.iter() {
+                    if let Selection::Field(field) = selection {
+                        // Get the mutation root table index
+                        let root_table_idx = symbol_to_index
+                            .get(&intern_str(field.name))
+                            .copied()
+                            .ok_or_else(|| {
+                                format!("field '{}' missing from mapping", field.name)
+                            })?;
+
+                        // Find any "returning" selection inside the mutation
+                        for selection in field.selection_set.selections.iter() {
+                            if let Selection::Field(returning_field) = selection {
+                                if returning_field.name == "returning" {
+                                    // Process columns in the returning clause directly for the root table
+                                    let mut returning_columns = Vec::new();
+
+                                    for selection in returning_field.selection_set.selections.iter()
+                                    {
+                                        if let Selection::Field(column_field) = selection {
+                                            if column_field.selection_set.is_empty() {
+                                                // This is a column
+                                                let column_idx = symbol_to_index
+                                                    .get(&intern_str(column_field.name))
+                                                    .copied()
+                                                    .ok_or_else(|| {
+                                                        format!(
+                                                            "column '{}' missing from mapping",
+                                                            column_field.name
+                                                        )
+                                                    })?;
+
+                                                returning_columns.push(column_idx);
+                                            }
+                                        }
+                                    }
+
+                                    // Add these columns to the root table
+                                    if !returning_columns.is_empty() {
+                                        if let Some(existing_entry) =
+                                            cols.iter_mut().find(|(idx, _)| *idx == root_table_idx)
+                                        {
+                                            // Merge columns (avoiding duplicates)
+                                            for col_idx in returning_columns {
+                                                if !existing_entry.1.contains(&col_idx) {
+                                                    existing_entry.1.push(col_idx);
+                                                }
+                                            }
+                                        } else {
+                                            // Add new entry for this table
+                                            cols.push((root_table_idx, returning_columns));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
