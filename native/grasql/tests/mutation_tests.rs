@@ -129,47 +129,15 @@ fn test_insert_with_variable() {
     assert!(field_paths.contains(&user_path));
 }
 
-#[test]
-fn test_update_mutation_extraction() {
-    // Initialize GraSQL config
-    initialize_grasql();
-
-    // Create a test UPDATE mutation
-    let query = r#"
-    mutation {
-        update_users(
-            where: { id: { _eq: 1 } },
-            _set: {
-                name: "Updated Name",
-                email: "updated@example.com",
-                status: "active"
-            }
-        ) {
-            returning {
-                id
-                name
-            }
-        }
-    }
-    "#;
-
-    // Extract field paths and column usage
-    let mut extractor = grasql::extraction::FieldPathExtractor::new();
-    let ctx = ASTContext::new();
-    let document = Document::parse(&ctx, query).unwrap();
-    let (_, column_usage) = extractor.extract(&document).unwrap();
-
-    // Find users table path
-    let users_path = create_path(&["update_users"]);
-
     // Verify column extraction
     let columns = column_usage.get(&users_path).unwrap();
     assert!(columns.contains(&intern_str("name")));
     assert!(columns.contains(&intern_str("email")));
     assert!(columns.contains(&intern_str("status")));
+    // Verify that only the expected columns were extracted
+    assert_eq!(columns.len(), 3, "Unexpected number of columns extracted");
     // We'll add an additional test for the "id" column later since it's
     // part of a separate task to properly extract columns from the "where" condition
-}
 
 #[test]
 fn test_batch_insert_extraction() {
