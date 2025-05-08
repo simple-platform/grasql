@@ -79,8 +79,13 @@ defmodule GraSQL do
 
       # Variable reference
       {1, var_name} ->
-        Map.get(variables, var_name) ||
-          Map.get(variables, String.to_atom(var_name))
+        case Map.get(variables, var_name, :key_not_found) do
+          :key_not_found ->
+            raise "Variable #{var_name} not found in variables"
+
+          value ->
+            value
+        end
     end)
   end
 end
