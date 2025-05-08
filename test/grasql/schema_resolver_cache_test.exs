@@ -8,16 +8,30 @@ defmodule GraSQL.SchemaResolverCacheTest do
       assert resolver == GraSQL.TestResolver
     end
 
-    test "returns error when resolver not found" do
-      # Temporarily clear the cache
-      :ets.delete(:grasql_resolver_cache, :schema_resolver)
-
-      # Should return error
-      assert {:error, _} = GraSQL.SchemaResolverCache.get_resolver()
-
-      # Put it back for other tests
-      :ets.insert(:grasql_resolver_cache, {:schema_resolver, GraSQL.TestResolver})
+  setup do
+    # Store original state
+    original_resolver = case :ets.lookup(:grasql_resolver_cache, :schema_resolver) do
+      [{:schema_resolver, resolver}] -> resolver
+      [] -> nil
     end
+
+    # Ensure cleanup happens even if the test fails
+    on_exit(fn ->
+      if original_resolver do
+        :ets.insert(:grasql_resolver_cache, {:schema_resolver, original_resolver})
+      end
+    end)
+
+    %{original_resolver: original_resolver}
+  end
+
+  test "returns error when resolver not found" do
+    # Temporarily clear the cache
+    :ets.delete(:grasql_resolver_cache, :schema_resolver)
+
+    # Should return error
+    assert {:error, _} = GraSQL.SchemaResolverCache.get_resolver()
+  end
   end
 
   test "GenServer initialization can be called" do
