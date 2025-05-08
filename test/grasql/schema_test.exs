@@ -2,23 +2,23 @@ defmodule GraSQL.SchemaTest do
   use ExUnit.Case
 
   describe "resolve/2" do
-    test "resolves tables and relationships correctly" do
-      # Create a resolution request similar to what the Rust NIF would produce
+    test "resolve/2 returns correctly structured resolution response" do
+      # Create a simple resolution request
       resolution_request = {
         :query_id,
         "test_query_id",
-        :field_names,
-        ["users", "id", "name", "email", "posts", "title", "content"],
-        :field_paths,
+        :strings,
+        ["users", "id", "name", "email", "profile", "bio", "avatar"],
+        :paths,
         [1, 0, 1, 4, 2, 0, 4],
         :path_dir,
         [0, 3],
         :path_types,
         [0, 1],
-        :column_map,
+        :cols,
         [{0, [1, 2, 3]}, {4, [5, 6]}],
         # users (index 0) -> query (type 0)
-        :operations,
+        :ops,
         [{0, 0}]
       }
 
@@ -68,18 +68,18 @@ defmodule GraSQL.SchemaTest do
       resolution_request = {
         :query_id,
         "multi_op_query_id",
-        :field_names,
+        :strings,
         ["users", "id", "name", "posts", "title", "content"],
-        :field_paths,
+        :paths,
         [1, 0, 2, 0, 1, 3, 2, 0, 3],
         :path_dir,
         [0, 3, 6],
         :path_types,
         [0, 0, 1],
-        :column_map,
+        :cols,
         [{0, [1, 2]}, {3, [4, 5]}],
         # users -> query, posts -> insert_mutation
-        :operations,
+        :ops,
         [{0, 0}, {3, 1}]
       }
 
@@ -107,19 +107,19 @@ defmodule GraSQL.SchemaTest do
       resolution_request = {
         :query_id,
         "nested_query_id",
-        :field_names,
+        :strings,
         ["users", "id", "posts", "title", "comments", "content"],
-        :field_paths,
+        :paths,
         [1, 0, 2, 0, 2, 2, 3, 3, 0, 2, 3, 4],
         :path_dir,
         [0, 2, 6],
         # users, users.posts, users.posts.comments
         :path_types,
         [0, 1, 1],
-        :column_map,
+        :cols,
         [{0, [1]}, {2, [3]}, {4, [5]}],
         # users -> query
-        :operations,
+        :ops,
         [{0, 0}]
       }
 
@@ -150,19 +150,19 @@ defmodule GraSQL.SchemaTest do
       resolution_request = {
         :query_id,
         "columns_query_id",
-        :field_names,
+        :strings,
         ["users", "id", "name", "email"],
-        :field_paths,
+        :paths,
         [2, 0, 1, 0],
         :path_dir,
         [0],
         # just users table
         :path_types,
         [0],
-        :column_map,
+        :cols,
         [{0, [1, 2, 3]}],
         # users -> query
-        :operations,
+        :ops,
         [{0, 0}]
       }
 
@@ -182,17 +182,17 @@ defmodule GraSQL.SchemaTest do
       resolution_request = {
         :query_id,
         "empty_query_id",
-        :field_names,
+        :strings,
         [],
-        :field_paths,
+        :paths,
         [],
         :path_dir,
         [],
         :path_types,
         [],
-        :column_map,
+        :cols,
         [],
-        :operations,
+        :ops,
         []
       }
 

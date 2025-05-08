@@ -109,10 +109,10 @@ fn convert_resolution_request_to_elixir<'a>(
     let query_id_atom = atoms::query_id().encode(env);
     let query_id_term = request.query_id.encode(env);
 
-    let strings_atom = atoms::field_names().encode(env); // Reuse field_names atom for strings
+    let strings_atom = atoms::strings().encode(env);
     let strings_term = request.strings.encode(env);
 
-    let paths_atom = atoms::field_paths().encode(env); // Reuse field_paths atom for paths
+    let paths_atom = atoms::paths().encode(env);
     let paths_term = request.paths.encode(env);
 
     let path_dir_atom = atoms::path_dir().encode(env);
@@ -121,10 +121,10 @@ fn convert_resolution_request_to_elixir<'a>(
     let path_types_atom = atoms::path_types().encode(env);
     let path_types_term = request.path_types.encode(env);
 
-    let cols_atom = atoms::column_map().encode(env); // Reuse column_map atom for cols
+    let cols_atom = atoms::cols().encode(env);
     let cols_term = request.cols.encode(env);
 
-    let ops_atom = atoms::operations().encode(env);
+    let ops_atom = atoms::ops().encode(env);
     let ops_term = request.ops.encode(env);
 
     // Create a 14-element tuple with key-value pairs

@@ -22,25 +22,20 @@ rustler::atoms! {
     subscription,
 
     // Resolution request keys
-    field_names,
-    field_paths,
-    column_map,
+    strings,
+    paths,
+    cols,
     operation_kind,
-
-    // New atoms for ResolutionRequest
     query_id,
     path_dir,
     path_types,
-    operations,
+    ops,
 
     // Resolution response keys
-    strings,
     tables,
     rels,
     joins,
     path_map,
-    cols,
-    ops,
 }
 
 /// Convert GraphQLOperationKind to Erlang atom

@@ -255,17 +255,17 @@ defmodule GraSQL.Schema do
     {
       :query_id,
       query_id,
-      :field_names,
+      :strings,
       strings,
-      :field_paths,
+      :paths,
       paths,
       :path_dir,
       path_dir,
       :path_types,
       path_types,
-      :column_map,
+      :cols,
       column_map,
-      :operations,
+      :ops,
       operations
     } = resolution_request
 
