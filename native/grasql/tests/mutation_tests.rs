@@ -55,7 +55,12 @@ fn test_insert_mutation_extraction() {
     assert!(columns.contains(&intern_str("email")));
     assert!(columns.contains(&intern_str("profile")));
 
-    // Test could also verify nested fields if needed
+    // Verify nested profile fields if implemented
+    let profile_path = create_path(&["insert_users", "profile"]);
+    if let Some(profile_columns) = column_usage.get(&profile_path) {
+        assert!(profile_columns.contains(&intern_str("bio")));
+        assert!(profile_columns.contains(&intern_str("website")));
+    }
 }
 
 #[test]
