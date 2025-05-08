@@ -4,6 +4,12 @@ use grasql::types::{CachedQueryInfo, GraphQLOperationKind};
 use std::mem::drop;
 use std::sync::Arc;
 
+// Helper function to ensure GraSQL is initialized before running tests
+fn initialize_grasql() {
+    // Ignore errors if already initialized
+    let _ = grasql::types::initialize_for_test();
+}
+
 // Test helper to check if a document contains specific operation type and field
 fn check_document_content(doc: &Document, expected_operation: GraphQLOperationKind) {
     // Find the operation
@@ -22,6 +28,9 @@ fn check_document_content(doc: &Document, expected_operation: GraphQLOperationKi
 
 #[test]
 fn test_basic_document_access() {
+    // Initialize GraSQL config
+    initialize_grasql();
+
     // Simple GraphQL query
     let query = r#"
     {
@@ -49,6 +58,9 @@ fn test_basic_document_access() {
 
 #[test]
 fn test_document_access_after_caching() {
+    // Initialize GraSQL config
+    initialize_grasql();
+
     // GraphQL query
     let query = r#"
     {
@@ -82,6 +94,9 @@ fn test_document_access_after_caching() {
 
 #[test]
 fn test_document_access_with_reparse_fallback() {
+    // Initialize GraSQL config
+    initialize_grasql();
+
     // Create a query string
     let query = "{ users { id name } }";
 
@@ -115,6 +130,9 @@ fn test_document_access_with_reparse_fallback() {
 
 #[test]
 fn test_memory_safety() {
+    // Initialize GraSQL config
+    initialize_grasql();
+
     // GraphQL query
     let query = r#"
     {
@@ -151,6 +169,9 @@ fn test_memory_safety() {
 
 #[test]
 fn test_document_with_mutation_query() {
+    // Initialize GraSQL config
+    initialize_grasql();
+
     // Mutation query
     let query = r#"
     mutation {
@@ -191,6 +212,9 @@ fn test_document_with_mutation_query() {
 
 #[test]
 fn test_multiple_document_accesses() {
+    // Initialize GraSQL config
+    initialize_grasql();
+
     // GraphQL query
     let query = r#"
     {

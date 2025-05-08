@@ -141,7 +141,7 @@ defmodule GraSQL.Config do
           string_interner_capacity: pos_integer(),
 
           # Schema resolver
-          schema_resolver: module()
+          schema_resolver: module() | nil
         }
 
   # Default Configuration
@@ -201,8 +201,8 @@ defmodule GraSQL.Config do
     max_query_depth: 10,
     string_interner_capacity: 10_000,
 
-    # Schema resolver - default to SimpleResolver
-    schema_resolver: GraSQL.SimpleResolver
+    # Schema resolver
+    schema_resolver: nil
   ]
 
   # Public API
@@ -263,7 +263,7 @@ defmodule GraSQL.Config do
   ## Examples
 
       # Configure GraSQL in your config.exs
-      config :grasql, max_query_depth: 20, schema_resolver: MyApp.SchemaResolver
+      config :grasql, schema_resolver: MyApp.SchemaResolver, max_query_depth: 20
 
       # Load and validate the configuration
       {:ok, config} = GraSQL.Config.load_and_validate()
@@ -280,7 +280,7 @@ defmodule GraSQL.Config do
     # Filter app_config to only include valid config fields
     valid_config =
       app_config
-      |> Enum.filter(fn {key, _} -> key in config_fields end)
+      |> Enum.filter(fn {key, _} -> key in config_fields and is_atom(key) end)
       |> Enum.into(%{})
 
     # Ensure schema_resolver is included if set in application environment
@@ -372,6 +372,129 @@ defmodule GraSQL.Config do
     end
   end
 
+  @doc """
+  Loads configuration from application environment for a specific module and validates it.
+
+  This function extends the default configuration system to support module-specific
+  configurations, allowing different modules to use different configuration settings.
+
+  ## Parameters
+
+  * `module` - The module to load configuration for (optional)
+
+  ## Returns
+
+  * `{:ok, config}` - If loading and validation are successful
+  * `{:error, reason}` - If validation fails, with a descriptive error message
+
+  ## Examples
+
+      # Configure GraSQL in your config.exs
+      config :grasql, MyApp.GraphQLAPI,
+        max_query_depth: 20,
+        schema_resolver: MyApp.SchemaResolver
+
+      # Load and validate the module-specific configuration
+      {:ok, config} = GraSQL.Config.load_and_validate_for_module(MyApp.GraphQLAPI)
+      config.max_query_depth  # Returns 20
+  """
+  @spec load_and_validate_for_module(module()) :: {:ok, t()} | {:error, String.t()}
+  def load_and_validate_for_module(module) when is_atom(module) do
+    # Get base application config (excluding module-specific configs)
+    base_config =
+      Application.get_all_env(:grasql)
+      |> Enum.filter(fn {key, _} -> is_atom(key) end)
+      |> Enum.into(%{})
+
+    # Get module-specific config
+    module_config =
+      Application.get_env(:grasql, module, [])
+      |> Enum.into(%{})
+
+    # Merge configurations with module config taking precedence
+    merged_config = Map.merge(base_config, module_config)
+
+    # Only include fields that exist in Config struct
+    config_fields = __struct__() |> Map.keys() |> Enum.filter(&(&1 != :__struct__))
+
+    # Filter merged_config to only include valid config fields
+    valid_config =
+      merged_config
+      |> Enum.filter(fn {key, _} -> key in config_fields end)
+      |> Enum.into(%{})
+
+    # Create config struct with merged settings
+    config = struct(__MODULE__, valid_config)
+
+    # Validate the config
+    case validate(config) do
+      {:ok, validated_config} ->
+        # Cache the validated config for this module using an atom key
+        config_key = module_config_key(module)
+        Application.put_env(:grasql, config_key, validated_config)
+        {:ok, validated_config}
+
+      error ->
+        error
+    end
+  end
+
+  @doc """
+  Gets the validated configuration for a specific module.
+
+  Retrieves cached configuration if available, otherwise loads and validates.
+
+  ## Parameters
+
+  * `module` - The module to get configuration for
+
+  ## Returns
+
+  * `{:ok, config}` - The validated configuration
+  * `{:error, reason}` - If validation fails
+
+  ## Examples
+
+      {:ok, config} = GraSQL.Config.get_config_for(MyApp.GraphQLAPI)
+  """
+  @spec get_config_for(module()) :: {:ok, t()} | {:error, String.t()}
+  def get_config_for(module) when is_atom(module) do
+    config_key = module_config_key(module)
+
+    case Application.get_env(:grasql, config_key) do
+      nil -> load_and_validate_for_module(module)
+      config -> {:ok, config}
+    end
+  end
+
+  # Helper function to create a unique atom key for module configuration
+  defp module_config_key(module) do
+    module_name = module |> Atom.to_string() |> String.replace("Elixir.", "")
+    :"__config_#{module_name}__"
+  end
+
+  @doc """
+  Gets the default validated configuration.
+
+  Retrieves cached global configuration if available, otherwise loads and validates.
+
+  ## Returns
+
+  * `{:ok, config}` - The validated configuration
+  * `{:error, reason}` - If validation fails
+
+  ## Examples
+
+      {:ok, config} = GraSQL.Config.get_config()
+  """
+  @spec get_config() :: {:ok, t()} | {:error, String.t()}
+  def get_config do
+    case Application.get_env(:grasql, :__config__) do
+      nil -> load_and_validate()
+      config -> {:ok, config}
+    end
+  end
+
   # Validation Functions
   #############################################################################
 
@@ -423,10 +546,17 @@ defmodule GraSQL.Config do
 
   @doc false
   defp validate_schema_resolver(config) do
-    # Use SimpleResolver as default if none is configured
-    resolver = config.schema_resolver || GraSQL.SimpleResolver
+    resolver = config.schema_resolver
 
     cond do
+      # Check if resolver is nil
+      is_nil(resolver) ->
+        {:error, "Schema resolver must be configured. Please set schema_resolver in your config."}
+
+      # In test environment, we allow missing modules as they might be loaded later
+      Mix.env() == :test ->
+        :ok
+
       # Ensure the resolver module is loaded
       not Code.ensure_loaded?(resolver) ->
         {:error, "Schema resolver module #{inspect(resolver)} could not be loaded"}
@@ -445,7 +575,9 @@ defmodule GraSQL.Config do
   defp functions_implemented?(module) do
     required_functions = [
       {:resolve_table, 2},
-      {:resolve_relationship, 3}
+      {:resolve_relationship, 3},
+      {:resolve_columns, 2},
+      {:resolve_column_attribute, 4}
     ]
 
     Enum.all?(

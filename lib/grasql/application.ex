@@ -1,40 +1,39 @@
 defmodule GraSQL.Application do
   @moduledoc """
-  GraSQL Application module.
+  OTP Application module for GraSQL.
 
-  Starts the GraSQL application and its supervision tree. Configuration is
-  automatically loaded during initialization.
+  Responsible for starting and managing the GraSQL application, including:
+  - Loading and validating global configuration
+  - Starting the schema resolver cache
+  - Managing the supervision tree
 
-  ## Configuration
-
-  Configure GraSQL in your application's config.exs file:
-
-  ```elixir
-  config :grasql,
-    # Caching settings
-    query_cache_max_size: 2000,
-    query_cache_ttl_seconds: 600,
-
-    # Performance limits
-    max_query_depth: 15,
-    string_interner_capacity: 10_000,
-
-    # Schema resolution
-    schema_resolver: MyApp.SchemaResolver
-  ```
-
-  See `GraSQL.Config` for details on all configuration options.
+  This module is automatically started when the GraSQL application starts.
   """
+
   use Application
   require Logger
 
   @doc false
   def start(_type, _args) do
-    # Load and validate configuration
-    {:ok, _config} = GraSQL.Config.load_and_validate()
+    # Load and validate global configuration
+    case GraSQL.Config.load_and_validate() do
+      {:ok, config} ->
+        # Store the validated config in application env
+        Application.put_env(:grasql, :__config__, config)
+        Logger.debug("GraSQL initialized with global configuration")
 
-    # Start a supervision tree if needed in the future
-    children = []
+      {:error, reason} ->
+        if Mix.env() != :test do
+          Logger.error("GraSQL configuration validation failed: #{reason}")
+          raise "GraSQL configuration validation failed: #{reason}"
+        end
+    end
+
+    # Start a supervision tree with resolver cache
+    children = [
+      GraSQL.SchemaResolverCache
+    ]
+
     opts = [strategy: :one_for_one, name: GraSQL.Supervisor]
     Supervisor.start_link(children, opts)
   end

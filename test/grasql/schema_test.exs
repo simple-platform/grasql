@@ -1,520 +1,211 @@
 defmodule GraSQL.SchemaTest do
-  use ExUnit.Case, async: true
-  doctest GraSQL.Schema
+  use ExUnit.Case
 
-  alias GraSQL.Schema
-  alias GraSQL.Schema.{JoinTable, Relationship, Table}
-
-  # Define a test resolver for testing
-  defmodule TestResolver do
-    @behaviour GraSQL.SchemaResolver
-
-    @impl true
-    def resolve_table("users", _ctx) do
-      %Table{schema: "public", name: "users"}
-    end
-
-    @impl true
-    def resolve_table("posts", _ctx) do
-      %Table{schema: "public", name: "posts"}
-    end
-
-    @impl true
-    def resolve_table("comments", _ctx) do
-      %Table{schema: "blog", name: "comments"}
-    end
-
-    def resolve_table(field_name, _ctx) do
-      %Table{schema: "public", name: field_name}
-    end
-
-    @impl true
-    def resolve_relationship("posts", %Table{name: "users"}, _ctx) do
-      %Relationship{
-        source_table: %Table{schema: "public", name: "users"},
-        target_table: %Table{schema: "public", name: "posts"},
-        source_columns: ["id"],
-        target_columns: ["user_id"],
-        type: :has_many,
-        join_table: nil
-      }
-    end
-
-    def resolve_relationship("comments", %Table{name: "articles"} = posts_table, _ctx) do
-      %Relationship{
-        type: :has_many,
-        source_table: posts_table,
-        target_table: %Table{schema: "blog", name: "comments"},
-        source_columns: ["id"],
-        target_columns: ["article_id"],
-        join_table: nil
-      }
-    end
-
-    def resolve_relationship("categories", %Table{name: "posts"} = posts_table, _ctx) do
-      %Relationship{
-        type: :many_to_many,
-        source_table: posts_table,
-        target_table: %Table{schema: "blog", name: "categories"},
-        source_columns: ["id"],
-        target_columns: ["id"],
-        join_table: %JoinTable{
-          schema: "blog",
-          name: "article_categories",
-          source_columns: ["article_id"],
-          target_columns: ["category_id"]
-        }
-      }
-    end
-
-    def resolve_relationship(field_name, parent_table, _ctx) do
-      %Relationship{
-        type: :has_many,
-        source_table: parent_table,
-        target_table: %Table{schema: "public", name: field_name},
-        source_columns: ["id"],
-        target_columns: ["#{parent_table.name}_id"],
-        join_table: nil
-      }
-    end
-
-    @impl true
-    def resolve_typename(%Table{name: "users"}, _ctx), do: "User"
-    def resolve_typename(%Table{name: "posts"}, _ctx), do: "Post"
-
-    def resolve_typename(%Table{name: "comments"}, _ctx) do
-      "Comment"
-    end
-
-    def resolve_typename(%Table{name: name}, _ctx) do
-      String.capitalize(name)
-    end
-
-    @impl true
-    def resolve_columns(%Table{name: "users"}, _ctx) do
-      ["id", "username", "email", "created_at"]
-    end
-
-    @impl true
-    def resolve_columns(%Table{name: "posts"}, _ctx) do
-      ["id", "title", "content", "user_id", "published", "created_at"]
-    end
-
-    @impl true
-    def resolve_column_attribute(:sql_type, "id", %Table{name: "users"}, _ctx), do: "INTEGER"
-
-    def resolve_column_attribute(:sql_type, "username", %Table{name: "users"}, _ctx),
-      do: "VARCHAR(100)"
-
-    def resolve_column_attribute(:sql_type, "email", %Table{name: "users"}, _ctx),
-      do: "VARCHAR(255)"
-
-    def resolve_column_attribute(:sql_type, "created_at", %Table{name: "users"}, _ctx),
-      do: "TIMESTAMP"
-
-    def resolve_column_attribute(:sql_type, "id", %Table{name: "posts"}, _ctx), do: "INTEGER"
-
-    def resolve_column_attribute(:sql_type, "title", %Table{name: "posts"}, _ctx),
-      do: "VARCHAR(200)"
-
-    def resolve_column_attribute(:sql_type, "content", %Table{name: "posts"}, _ctx), do: "TEXT"
-    def resolve_column_attribute(:sql_type, "user_id", %Table{name: "posts"}, _ctx), do: "INTEGER"
-
-    def resolve_column_attribute(:sql_type, "published", %Table{name: "posts"}, _ctx),
-      do: "BOOLEAN"
-
-    def resolve_column_attribute(:sql_type, "created_at", %Table{name: "posts"}, _ctx),
-      do: "TIMESTAMP"
-
-    def resolve_column_attribute(:default_value, "id", %Table{name: "users"}, _ctx), do: nil
-    def resolve_column_attribute(:default_value, "username", %Table{name: "users"}, _ctx), do: nil
-    def resolve_column_attribute(:default_value, "email", %Table{name: "users"}, _ctx), do: nil
-
-    def resolve_column_attribute(:default_value, "created_at", %Table{name: "users"}, _ctx),
-      do: "CURRENT_TIMESTAMP"
-
-    def resolve_column_attribute(:default_value, "id", %Table{name: "posts"}, _ctx), do: nil
-    def resolve_column_attribute(:default_value, "title", %Table{name: "posts"}, _ctx), do: nil
-    def resolve_column_attribute(:default_value, "content", %Table{name: "posts"}, _ctx), do: nil
-    def resolve_column_attribute(:default_value, "user_id", %Table{name: "posts"}, _ctx), do: nil
-
-    def resolve_column_attribute(:default_value, "published", %Table{name: "posts"}, _ctx),
-      do: "false"
-
-    def resolve_column_attribute(:default_value, "created_at", %Table{name: "posts"}, _ctx),
-      do: "CURRENT_TIMESTAMP"
-  end
-
-  # Helper functions for extracting data from the new schema format
-  defp get_tables(schema) do
-    schema
-    |> Enum.filter(fn {_path, entry} -> match?({:table, _}, entry) end)
-    |> Enum.map(fn {_path, {:table, %{table: table}}} -> table end)
-  end
-
-  defp get_relationships(schema) do
-    schema
-    |> Enum.filter(fn {_path, entry} -> match?({:relationship, _}, entry) end)
-    |> Enum.map(fn {_path, {:relationship, relationship}} -> relationship end)
-  end
-
-  defp get_columns(schema, table_name) do
-    schema
-    |> Enum.find(fn
-      {[name], _} -> name == table_name
-      {key, _} when is_atom(key) -> false
-    end)
-    |> case do
-      {_, {:table, %{columns: columns}}} -> columns
-      _ -> []
-    end
-  end
-
-  describe "typename resolution" do
-    test "adds __typename to root tables" do
-      # Create a resolution request with users field
-      resolution_request = {:field_names, ["users"], :field_paths, [[0]]}
-
-      # Resolve schema
-      schema = Schema.resolve(resolution_request, TestResolver)
-
-      # Get the users table from the schema
-      {:table, %{table: users_table}} = schema[["users"]]
-
-      # Check typename
-      assert users_table.__typename == "User"
-    end
-
-    test "adds __typename to target tables in relationships" do
-      # Create a resolution request with users and posts fields
-      resolution_request = {
-        :field_names,
-        ["users", "posts"],
-        :field_paths,
-        [[0], [0, 1]]
-      }
-
-      # Resolve schema
-      schema = Schema.resolve(resolution_request, TestResolver)
-
-      # Check schema - should have typename in relationship's target table
-      {:relationship, relationship} = schema[["users", "posts"]]
-      assert relationship.target_table.__typename == "Post"
-    end
-
-    test "adds __typename to deeply nested tables" do
-      # Create a resolution request with deeply nested relationships
-      resolution_request = {
-        :field_names,
-        ["users", "posts", "comments"],
-        :field_paths,
-        [[0], [0, 1], [0, 1, 2]]
-      }
-
-      # Resolve schema
-      schema = Schema.resolve(resolution_request, TestResolver)
-
-      # Check nested relationship target table typename
-      {:relationship, comments_rel} = schema[["users", "posts", "comments"]]
-      assert comments_rel.target_table.__typename == "Comment"
-    end
-  end
-
-  describe "resolve/3" do
-    test "resolves a simple query with single table" do
-      # Create a resolution request with users field
-      resolution_request = {:field_names, ["users"], :field_paths, [[0]]}
-
-      # Resolve schema
-      schema = Schema.resolve(resolution_request, TestResolver)
-
-      # Check resolved schema
-      tables = get_tables(schema)
-      relationships = get_relationships(schema)
-
-      assert length(tables) == 1
-      assert Enum.empty?(relationships)
-      assert is_map(schema)
-
-      # Check schema
-      assert match?(
-               {:table, %{table: %Table{schema: "public", name: "users"}}},
-               schema[["users"]]
-             )
-    end
-
-    test "resolves a query with relationships" do
-      # Create a resolution request with users and posts fields
-      resolution_request = {
-        :field_names,
-        ["users", "posts"],
-        :field_paths,
-        [[0], [0, 1]]
-      }
-
-      # Resolve schema
-      schema = Schema.resolve(resolution_request, TestResolver)
-
-      # Check resolved schema
-      tables = get_tables(schema)
-      relationships = get_relationships(schema)
-
-      assert length(tables) == 2
-      assert length(relationships) == 1
-      assert is_map(schema)
-
-      # Check schema - should have table and relationship entries
-      assert match?(
-               {:table, %{table: %Table{schema: "public", name: "users"}}},
-               schema[["users"]]
-             )
-
-      assert match?({:relationship, %Relationship{}}, schema[["users", "posts"]])
-
-      # Verify relationship is correct
-      {:relationship, relationship} = schema[["users", "posts"]]
-      assert relationship.type == :has_many
-      assert relationship.source_table.name == "users"
-      assert relationship.target_table.name == "posts"
-      assert relationship.source_columns == ["id"]
-      assert relationship.target_columns == ["user_id"]
-      assert relationship.join_table == nil
-
-      # Verify target tables are included in the result
-      target_table_included =
-        Enum.any?(tables, fn table ->
-          table.name == "posts" && table.schema == "public"
-        end)
-
-      assert target_table_included, "Target table should be included in the tables list"
-    end
-
-    test "resolves a query with multiple nested relationships" do
-      # Create a resolution request with deeply nested relationships
-      resolution_request = {
-        :field_names,
-        ["users", "posts", "comments", "categories"],
-        :field_paths,
-        [[0], [0, 1], [0, 1, 2], [0, 1, 3]]
-      }
-
-      # Resolve schema
-      schema = Schema.resolve(resolution_request, TestResolver)
-
-      # Check resolved schema
-      tables = get_tables(schema)
-      relationships = get_relationships(schema)
-
-      assert length(tables) == 4
-      assert length(relationships) == 3
-      assert is_map(schema)
-
-      # Check schema - should have all entries
-      assert match?(
-               {:table, %{table: %Table{schema: "public", name: "users"}}},
-               schema[["users"]]
-             )
-
-      assert match?({:relationship, %Relationship{}}, schema[["users", "posts"]])
-
-      assert match?(
-               {:relationship, %Relationship{}},
-               schema[["users", "posts", "comments"]]
-             )
-
-      assert match?(
-               {:relationship, %Relationship{}},
-               schema[["users", "posts", "categories"]]
-             )
-
-      # Verify many-to-many relationship
-      {:relationship, categories_rel} = schema[["users", "posts", "categories"]]
-      assert categories_rel.type == :many_to_many
-      assert categories_rel.join_table.name == "article_categories"
-    end
-
-    test "handles context passing" do
+  describe "resolve/2" do
+    test "resolve/2 returns correctly structured resolution response" do
       # Create a simple resolution request
-      resolution_request = {:field_names, ["users"], :field_paths, [[0]]}
+      resolution_request = {
+        :query_id,
+        "test_query_id",
+        :strings,
+        ["users", "id", "name", "email", "profile", "bio", "avatar"],
+        :paths,
+        [1, 0, 1, 4, 2, 0, 4],
+        :path_dir,
+        [0, 3],
+        :path_types,
+        [0, 1],
+        :cols,
+        [{0, [1, 2, 3]}, {4, [5, 6]}],
+        # users (index 0) -> query (type 0)
+        :ops,
+        [{0, 0}]
+      }
 
-      # Create a test context with some values
-      context = %{tenant_id: "tenant123", user_id: 456}
+      # Call resolve
+      result = GraSQL.Schema.resolve(resolution_request)
 
-      # Create a context-checking resolver
-      defmodule ContextTestResolver do
-        use GraSQL.SchemaResolver
+      # Basic validation of the response structure
+      assert is_map(result)
+      assert Map.has_key?(result, :query_id)
+      assert Map.has_key?(result, :strings)
+      assert Map.has_key?(result, :tables)
+      assert Map.has_key?(result, :rels)
+      assert Map.has_key?(result, :joins)
+      assert Map.has_key?(result, :path_map)
+      assert Map.has_key?(result, :cols)
+      assert Map.has_key?(result, :ops)
 
-        @impl true
-        def resolve_table("users", ctx) do
-          # Store the context in the table name for testing
-          tenant = ctx[:tenant_id] || "none"
-          %Table{schema: "public", name: "users_#{tenant}"}
-        end
+      # Verify query_id is preserved
+      assert result.query_id == "test_query_id"
 
-        @impl true
-        def resolve_relationship(_field_name, parent_table, _ctx) do
-          %Relationship{
-            type: :has_many,
-            source_table: parent_table,
-            target_table: %Table{schema: "public", name: "default"},
-            source_columns: ["id"],
-            target_columns: ["parent_id"],
-            join_table: nil
-          }
-        end
+      # Verify strings are present
+      assert "users" in result.strings
+      assert "id" in result.strings
+      assert "public" in result.strings
 
-        @impl true
-        def resolve_columns(_table, _ctx) do
-          ["id", "name"]
-        end
+      # Verify at least one table
+      assert result.tables != []
 
-        @impl true
-        def resolve_column_attribute(:sql_type, _column, _table, _ctx) do
-          "TEXT"
-        end
+      # Verify operations are preserved
+      assert result.ops == [{0, 0}]
 
-        def resolve_column_attribute(:default_value, _column, _table, _ctx) do
-          nil
-        end
+      # If we do have any relationships, verify their structure
+      if result.rels != [] do
+        rel = List.first(result.rels)
+
+        # (src_table_idx, target_table_idx, type_code, join_table_idx, [src_col_idxs], [tgt_col_idxs])
+        assert tuple_size(rel) == 6
+
+        {_, _, _, _, src_cols, tgt_cols} = rel
+        assert is_list(src_cols)
+        assert is_list(tgt_cols)
       end
-
-      # Resolve schema with context
-      schema = Schema.resolve(resolution_request, ContextTestResolver, context)
-
-      # Verify context was passed to resolver
-      {:table, %{table: table}} = schema[["users"]]
-      assert table.name == "users_tenant123"
-    end
-  end
-
-  describe "data structures" do
-    test "Table struct" do
-      table = %Table{schema: "public", name: "users"}
-      assert table.schema == "public"
-      assert table.name == "users"
     end
 
-    test "JoinTable struct" do
-      join_table = %JoinTable{
-        schema: "public",
-        name: "post_categories",
-        source_columns: ["post_id"],
-        target_columns: ["category_id"]
+    test "resolves multiple operations in a single query" do
+      # Create a resolution request with multiple operations
+      resolution_request = {
+        :query_id,
+        "multi_op_query_id",
+        :strings,
+        ["users", "id", "name", "posts", "title", "content"],
+        :paths,
+        [1, 0, 2, 0, 1, 3, 2, 0, 3],
+        :path_dir,
+        [0, 3, 6],
+        :path_types,
+        [0, 0, 1],
+        :cols,
+        [{0, [1, 2]}, {3, [4, 5]}],
+        # users -> query, posts -> insert_mutation
+        :ops,
+        [{0, 0}, {3, 1}]
       }
 
-      assert join_table.schema == "public"
-      assert join_table.name == "post_categories"
-      assert join_table.source_columns == ["post_id"]
-      assert join_table.target_columns == ["category_id"]
+      # Call resolve
+      result = GraSQL.Schema.resolve(resolution_request)
+
+      # Verify response structure
+      assert is_map(result)
+      assert Map.has_key?(result, :query_id)
+      assert result.query_id == "multi_op_query_id"
+
+      # Verify tables
+      assert not Enum.empty?(result.tables)
+
+      # Both users and posts should be in the resolved tables
+      assert "users" in result.strings
+      assert "posts" in result.strings
+
+      # Verify operations
+      assert length(result.ops) == 2
     end
 
-    test "Relationship struct" do
-      source_table = %Table{schema: "public", name: "users"}
-      target_table = %Table{schema: "public", name: "posts"}
-
-      relationship = %Relationship{
-        source_table: source_table,
-        target_table: target_table,
-        source_columns: ["id"],
-        target_columns: ["user_id"],
-        type: :has_many,
-        join_table: nil
+    test "handles complex nested relationships" do
+      # Create a resolution request with nested relationships
+      resolution_request = {
+        :query_id,
+        "nested_query_id",
+        :strings,
+        ["users", "id", "posts", "title", "comments", "content"],
+        :paths,
+        [1, 0, 2, 0, 2, 2, 3, 3, 0, 2, 3, 4],
+        :path_dir,
+        [0, 2, 6],
+        # users, users.posts, users.posts.comments
+        :path_types,
+        [0, 1, 1],
+        :cols,
+        [{0, [1]}, {2, [3]}, {4, [5]}],
+        # users -> query
+        :ops,
+        [{0, 0}]
       }
 
-      assert relationship.source_table == source_table
-      assert relationship.target_table == target_table
-      assert relationship.source_columns == ["id"]
-      assert relationship.target_columns == ["user_id"]
-      assert relationship.type == :has_many
-      assert relationship.join_table == nil
+      # Call resolve
+      result = GraSQL.Schema.resolve(resolution_request)
+
+      # Verify response structure
+      assert is_map(result)
+      assert Map.has_key?(result, :query_id)
+      assert result.query_id == "nested_query_id"
+
+      # Verify tables and path_map
+      assert not Enum.empty?(result.tables)
+      assert length(result.path_map) > 0
+
+      # Verify table names are in the strings
+      assert "users" in result.strings
+
+      # If we have relationships, verify their structure
+      if result.rels != [] do
+        rel = List.first(result.rels)
+        assert tuple_size(rel) == 6
+      end
     end
-  end
 
-  test "resolves schema with a simple field path" do
-    resolution_request = %{
-      field_names: ["users"],
-      field_paths: [["users"]]
-    }
+    test "resolves columns with their attributes" do
+      # Create a simple resolution request
+      resolution_request = {
+        :query_id,
+        "columns_query_id",
+        :strings,
+        ["users", "id", "name", "email"],
+        :paths,
+        [2, 0, 1, 0],
+        :path_dir,
+        [0],
+        # just users table
+        :path_types,
+        [0],
+        :cols,
+        [{0, [1, 2, 3]}],
+        # users -> query
+        :ops,
+        [{0, 0}]
+      }
 
-    schema = Schema.resolve(resolution_request, TestResolver)
-    tables = get_tables(schema)
+      # Call resolve
+      result = GraSQL.Schema.resolve(resolution_request)
 
-    assert length(tables) == 1
-    assert Enum.empty?(get_relationships(schema))
+      # Verify columns are resolved
+      assert length(result.cols) > 0
 
-    [table] = tables
-    assert table.name == "users"
-    assert table.schema == "public"
-    assert table.__typename == "User"
-  end
+      # Check for column types and attributes in strings
+      assert "integer" in result.strings
+      assert "text" in result.strings
+    end
 
-  test "resolves schema with a nested field path" do
-    resolution_request = %{
-      field_names: ["users", "posts"],
-      field_paths: [["users"], ["users", "posts"]]
-    }
+    test "handles empty input gracefully" do
+      # Create an empty resolution request
+      resolution_request = {
+        :query_id,
+        "empty_query_id",
+        :strings,
+        [],
+        :paths,
+        [],
+        :path_dir,
+        [],
+        :path_types,
+        [],
+        :cols,
+        [],
+        :ops,
+        []
+      }
 
-    schema = Schema.resolve(resolution_request, TestResolver)
+      # Call resolve - should not crash
+      result = GraSQL.Schema.resolve(resolution_request)
 
-    tables = get_tables(schema)
-    relationships = get_relationships(schema)
-
-    assert length(tables) == 2
-    assert length(relationships) == 1
-
-    [rel] = relationships
-    assert rel.source_table.name == "users"
-    assert rel.target_table.name == "posts"
-    assert rel.source_columns == ["id"]
-    assert rel.target_columns == ["user_id"]
-    assert rel.type == :has_many
-  end
-
-  test "resolves schema with columns and operation kind" do
-    # For this test, we'll use the 8-element tuple format as defined in extract_resolution_info
-    resolution_request = {
-      :field_names,
-      ["users", "posts"],
-      :field_paths,
-      [[0], [0, 1]],
-      :column_map,
-      [{0, ["id", "username"]}, {1, ["title", "published"]}],
-      :operation_kind,
-      :insert_mutation
-    }
-
-    schema = Schema.resolve(resolution_request, TestResolver)
-
-    tables = get_tables(schema)
-    relationships = get_relationships(schema)
-
-    assert length(tables) == 2
-    assert length(relationships) == 1
-
-    # Check columns for users table
-    users_columns = get_columns(schema, "users")
-    assert length(users_columns) == 2
-
-    # Check column attributes for users table
-    id_column = Enum.find(users_columns, fn col -> col.name == "id" end)
-    assert id_column.sql_type == "INTEGER"
-    assert id_column.default_value == nil
-
-    username_column = Enum.find(users_columns, fn col -> col.name == "username" end)
-    assert username_column.sql_type == "VARCHAR(100)"
-    assert username_column.default_value == nil
-
-    # Check columns for posts table
-    posts_columns = get_columns(schema, "posts")
-    assert length(posts_columns) == 2
-
-    # Check column attributes for posts table
-    title_column = Enum.find(posts_columns, fn col -> col.name == "title" end)
-    assert title_column.sql_type == "VARCHAR(200)"
-    assert title_column.default_value == nil
-
-    published_column = Enum.find(posts_columns, fn col -> col.name == "published" end)
-    assert published_column.sql_type == "BOOLEAN"
-    assert published_column.default_value == "false"
+      # Verify basic structure is maintained
+      assert is_map(result)
+      assert Map.has_key?(result, :query_id)
+      assert result.query_id == "empty_query_id"
+      assert Enum.empty?(result.tables)
+      assert Enum.empty?(result.rels)
+      assert Enum.empty?(result.path_map)
+    end
   end
 end

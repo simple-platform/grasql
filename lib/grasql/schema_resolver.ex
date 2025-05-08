@@ -155,45 +155,4 @@ defmodule GraSQL.SchemaResolver do
               table :: GraSQL.Schema.Table.t(),
               context :: map()
             ) :: any()
-
-  @doc """
-  Resolves the GraphQL __typename for a database table.
-
-  Determines what GraphQL type name should be used for a given database table.
-  This is used to include the __typename field in GraphQL responses.
-
-  ## Parameters
-
-  * `table` - The resolved database table
-  * `context` - Optional context map with user/tenant information
-
-  ## Returns
-
-  * A string representing the GraphQL type name, or nil to use the default naming
-
-  ## Example
-
-  ```elixir
-  def resolve_typename(%GraSQL.Schema.Table{name: "users"}, _context) do
-    "User"  # Map "users" table to "User" GraphQL type
-  end
-
-  # Fall back to default naming for other tables
-  def resolve_typename(_table, _context), do: nil
-  ```
-  """
-  @callback resolve_typename(
-              table :: GraSQL.Schema.Table.t(),
-              context :: map()
-            ) :: String.t() | nil
-
-  # Make resolve_typename an optional callback
-  @optional_callbacks [resolve_typename: 2]
-
-  defmacro __using__(_opts) do
-    quote do
-      @behaviour GraSQL.SchemaResolver
-      # No default implementations - users must implement these
-    end
-  end
 end

@@ -3,16 +3,12 @@
 /// This module provides the NIFs (Native Implemented Functions) that are exposed to Elixir.
 /// These functions are the bridge between Elixir and the Rust implementation of GraSQL.
 use crate::atoms;
-use crate::cache::{add_to_cache, generate_query_id, get_from_cache};
+use crate::cache::{add_to_cache_with_request, generate_query_id, get_from_cache};
 use crate::config::CONFIG;
-use crate::extraction::convert_paths_to_indices;
-use crate::interning::{get_all_strings, intern_str};
 use crate::parser::parse_graphql;
-use crate::sql::generate_sql;
-use crate::types::{CachedQueryInfo, ResolutionRequest};
+use crate::types::ResolutionRequest;
 
 use rustler::{Encoder, Env, Error, NifResult, Term};
-use std::collections::HashMap;
 
 /// Parse a GraphQL query string
 ///
@@ -38,14 +34,20 @@ pub fn do_parse_query(env: Env<'_>, query: String) -> rustler::NifResult<Term<'_
         // Cache hit - return the cached parsed query info
         let operation_kind = atoms::operation_kind_to_atom(cached_query_info.operation_kind);
 
-        // Create resolution request from cached query info
-        let resolution_request = match create_resolution_request_from_cached(&cached_query_info) {
-            Ok(req) => req,
-            Err(e) => return Err(Error::Term(Box::new(e))),
-        };
+        // Use cached ResolutionRequest - it should always be available
+        debug_assert!(
+            cached_query_info.resolution_request.is_some(),
+            "ResolutionRequest not found in cache - cache invariant violated"
+        );
 
         // Convert resolution request to Elixir term
-        let resolution_term = match convert_resolution_request_to_elixir(env, &resolution_request) {
+        let resolution_term = match convert_resolution_request_to_elixir(
+            env,
+            cached_query_info
+                .resolution_request
+                .as_ref()
+                .expect("ResolutionRequest missing from cache"),
+        ) {
             Ok(term) => term,
             Err(e) => return Err(e),
         };
@@ -68,8 +70,12 @@ pub fn do_parse_query(env: Env<'_>, query: String) -> rustler::NifResult<Term<'_
         Err(e) => return Err(Error::Term(Box::new(e))),
     };
 
-    // Add to cache
-    add_to_cache(&query_id, parsed_query_info.clone());
+    // Add to cache with resolution request
+    add_to_cache_with_request(
+        &query_id,
+        parsed_query_info.clone(),
+        resolution_request.clone(),
+    );
 
     // Return the operation info
     let operation_kind = atoms::operation_kind_to_atom(parsed_query_info.operation_kind);
@@ -98,87 +104,50 @@ fn convert_resolution_request_to_elixir<'a>(
     env: Env<'a>,
     request: &ResolutionRequest,
 ) -> NifResult<Term<'a>> {
-    // Convert HashSet to Vec before encoding
-    let field_paths_vec: Vec<Vec<u32>> = request.field_paths.iter().cloned().collect();
-
-    // Convert HashMap<u32, HashSet<String>> to Vec<(u32, Vec<String>)> for encoding
-    let column_map_vec: Vec<(u32, Vec<String>)> = request
-        .column_map
-        .iter()
-        .map(|(&table_idx, columns)| (table_idx, columns.iter().cloned().collect::<Vec<String>>()))
-        .collect();
-
-    // Get operation kind atom
-    let op_kind_atom = atoms::operation_kind_to_atom(request.operation_kind);
-
+    // Create a map with atom keys for each field in the ResolutionRequest
+    // This will be easier to pattern match in Elixir
     // Create individual terms
-    let field_names_atom = atoms::field_names().encode(env);
-    let field_names_term = request.field_names.encode(env);
-    let field_paths_atom = atoms::field_paths().encode(env);
-    let field_paths_term = field_paths_vec.encode(env);
-    let column_map_atom = atoms::column_map().encode(env);
-    let column_map_term = column_map_vec.encode(env);
-    let operation_kind_atom = atoms::operation_kind().encode(env);
-    let operation_kind_term = op_kind_atom.encode(env);
+    let query_id_atom = atoms::query_id().encode(env);
+    let query_id_term = request.query_id.encode(env);
 
-    // Create an 8-element tuple
+    let strings_atom = atoms::strings().encode(env);
+    let strings_term = request.strings.encode(env);
+
+    let paths_atom = atoms::paths().encode(env);
+    let paths_term = request.paths.encode(env);
+
+    let path_dir_atom = atoms::path_dir().encode(env);
+    let path_dir_term = request.path_dir.encode(env);
+
+    let path_types_atom = atoms::path_types().encode(env);
+    let path_types_term = request.path_types.encode(env);
+
+    let cols_atom = atoms::cols().encode(env);
+    let cols_term = request.cols.encode(env);
+
+    let ops_atom = atoms::ops().encode(env);
+    let ops_term = request.ops.encode(env);
+
+    // Create a 14-element tuple with key-value pairs
     Ok(rustler::types::tuple::make_tuple(
         env,
         &[
-            field_names_atom,
-            field_names_term,
-            field_paths_atom,
-            field_paths_term,
-            column_map_atom,
-            column_map_term,
-            operation_kind_atom,
-            operation_kind_term,
+            query_id_atom,
+            query_id_term,
+            strings_atom,
+            strings_term,
+            paths_atom,
+            paths_term,
+            path_dir_atom,
+            path_dir_term,
+            path_types_atom,
+            path_types_term,
+            cols_atom,
+            cols_term,
+            ops_atom,
+            ops_term,
         ],
     ))
-}
-
-/// Create a resolution request from a cached CachedQueryInfo
-#[inline(always)]
-fn create_resolution_request_from_cached(
-    cached_info: &CachedQueryInfo,
-) -> Result<ResolutionRequest, String> {
-    // Extract field paths from a cached CachedQueryInfo
-    let field_paths = match &cached_info.field_paths {
-        Some(paths) => paths,
-        None => return Err("Field paths not found in cached query".to_string()),
-    };
-
-    // Get all interned strings and create a mapping from SymbolId to index
-    let field_names = get_all_strings();
-    let mut symbol_to_index = HashMap::with_capacity(field_names.len());
-
-    for (i, name) in field_names.iter().enumerate() {
-        let symbol_id = intern_str(name);
-        symbol_to_index.insert(symbol_id, i as u32);
-    }
-
-    // Convert FieldPaths with SymbolIds to indices for Elixir
-    let converted_paths = convert_paths_to_indices(field_paths, &symbol_to_index);
-
-    // Extract column usage from cached query info
-    let column_map = match &cached_info.column_usage {
-        Some(column_usage) => {
-            // Convert column usage to table indices with column strings
-            crate::extraction::convert_column_usage_to_indices(
-                column_usage,
-                field_paths,
-                &symbol_to_index,
-            )
-        }
-        None => HashMap::new(), // Default empty column map if no column usage info
-    };
-
-    Ok(ResolutionRequest {
-        field_names,
-        field_paths: converted_paths,
-        column_map,
-        operation_kind: cached_info.operation_kind,
-    })
 }
 
 /// Generate SQL from a parsed GraphQL query
@@ -189,9 +158,7 @@ fn create_resolution_request_from_cached(
 #[rustler::nif]
 pub fn do_generate_sql<'a>(
     env: Env<'a>,
-    query_id: String,
-    _variables: Term<'a>,
-    _schema: Term<'a>,
+    resolution_response: Term<'a>,
 ) -> rustler::NifResult<Term<'a>> {
     // Get the current configuration
     let _config = match CONFIG.lock() {
@@ -202,19 +169,48 @@ pub fn do_generate_sql<'a>(
         Err(_) => return Err(Error::Term(Box::new("Failed to acquire config lock"))),
     };
 
-    // Try to get from cache
-    let cached_query_info = match get_from_cache(&query_id) {
-        Some(info) => info,
-        None => return Err(Error::Term(Box::new("Query not found in cache"))),
-    };
+    // Decode ResolutionResponse from Elixir term
+    let response = decode_resolution_response(env, resolution_response)?;
 
-    // Generate SQL using the cached query info
-    // Note: We're not using the schema parameter yet - this will be implemented in Phase 3
-    // For now, we just store the schema information and pass it along
-    let sql = generate_sql(&cached_query_info);
+    // Generate SQL using the cached query info and resolution response
+    // Note: This is a stub implementation - will be replaced in Phase 3
+    let _ = response; // Use the response to avoid unused variable warning
 
     // Create an empty list for parameters
     let params: Vec<Term<'a>> = Vec::new();
 
-    Ok((atoms::ok(), sql, params).encode(env))
+    Ok((atoms::ok(), "SELECT 1", params).encode(env))
+}
+
+/// Decode ResolutionResponse from Elixir term
+fn decode_resolution_response<'a>(
+    _env: Env<'a>,
+    term: Term<'a>,
+) -> NifResult<crate::types::ResolutionResponse> {
+    // Extract fields from the map
+    let query_id: String = term.map_get(atoms::query_id())?.decode()?;
+    let strings: Vec<String> = term.map_get(atoms::strings())?.decode()?;
+    let tables: Vec<(u32, u32, u32)> = term.map_get(atoms::tables())?.decode()?;
+
+    // Decode relationships with source and target column arrays
+    let rels: Vec<(u32, u32, u8, i32, Vec<u32>, Vec<u32>)> =
+        term.map_get(atoms::rels())?.decode()?;
+
+    let joins: Vec<(u32, u32, Vec<u32>, Vec<u32>)> = term.map_get(atoms::joins())?.decode()?;
+    let path_map: Vec<(u8, u32)> = term.map_get(atoms::path_map())?.decode()?;
+    let cols: Vec<(u32, u32, u32, i32)> = term.map_get(atoms::cols())?.decode()?;
+
+    // Decode operations
+    let ops: Vec<(u32, u8)> = term.map_get(atoms::ops())?.decode()?;
+
+    Ok(crate::types::ResolutionResponse {
+        query_id,
+        strings,
+        tables,
+        rels,
+        joins,
+        path_map,
+        cols,
+        ops,
+    })
 }

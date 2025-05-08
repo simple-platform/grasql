@@ -8,8 +8,8 @@ use graphql_query::ast::OperationKind;
 #[cfg(test)]
 use grasql::insert_raw_for_test;
 use grasql::parser::parse_graphql;
-use grasql::types::{CachedQueryInfo, GraphQLOperationKind};
-use grasql::{add_to_cache, generate_query_id, get_from_cache};
+use grasql::types::{CachedQueryInfo, GraphQLOperationKind, ResolutionRequest};
+use grasql::{add_to_cache, add_to_cache_with_request, generate_query_id, get_from_cache};
 
 /// Test basic cache functionality
 #[test]
@@ -435,5 +435,72 @@ fn test_document_validity_across_threads() {
     assert!(
         thread_handle.join().unwrap(),
         "Document should be valid across thread boundaries"
+    );
+}
+
+/// Test that ResolutionRequest is properly cached and retrieved
+#[test]
+fn test_resolution_request_caching() {
+    // Parse a simple query
+    let query = "{ users { id name } }";
+    let (parsed_info, resolution_request) = parse_graphql(query).unwrap();
+
+    // Generate query ID and add to cache with the resolution request
+    let query_id = generate_query_id(query);
+    add_to_cache_with_request(&query_id, parsed_info.clone(), resolution_request.clone());
+
+    // Retrieve from cache
+    let cached_info = get_from_cache(&query_id).unwrap();
+
+    // Verify that the ResolutionRequest is cached
+    assert!(
+        cached_info.resolution_request.is_some(),
+        "ResolutionRequest should be cached"
+    );
+
+    // Verify that the cached ResolutionRequest matches the original
+    let cached_request = cached_info.resolution_request.unwrap();
+
+    // Check that the cached request has the same query_id
+    assert_eq!(
+        cached_request.query_id, resolution_request.query_id,
+        "Cached ResolutionRequest should have the same query_id"
+    );
+
+    // Check that the cached request has the same strings
+    assert_eq!(
+        cached_request.strings.len(),
+        resolution_request.strings.len(),
+        "Cached ResolutionRequest should have the same number of strings"
+    );
+
+    // Check that the cached request has the same paths
+    assert_eq!(
+        cached_request.paths, resolution_request.paths,
+        "Cached ResolutionRequest should have the same paths"
+    );
+
+    // Check that the cached request has the same path_dir
+    assert_eq!(
+        cached_request.path_dir, resolution_request.path_dir,
+        "Cached ResolutionRequest should have the same path_dir"
+    );
+
+    // Check that the cached request has the same path_types
+    assert_eq!(
+        cached_request.path_types, resolution_request.path_types,
+        "Cached ResolutionRequest should have the same path_types"
+    );
+
+    // Check that the cached request has the same cols
+    assert_eq!(
+        cached_request.cols, resolution_request.cols,
+        "Cached ResolutionRequest should have the same cols"
+    );
+
+    // Check that the cached request has the same ops
+    assert_eq!(
+        cached_request.ops, resolution_request.ops,
+        "Cached ResolutionRequest should have the same ops"
     );
 }
