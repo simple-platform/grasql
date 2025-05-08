@@ -3,9 +3,9 @@
 /// This module provides functionality for parsing GraphQL queries and
 /// extracting necessary information for SQL generation.
 use crate::cache::generate_query_id;
-use crate::extraction::{build_path_index, convert_paths_to_indices, FieldPathExtractor};
+use crate::extraction::{build_path_index, FieldPathExtractor};
 use crate::interning::{get_all_strings, intern_str};
-use crate::types::{FieldPath, GraphQLOperationKind, ParsedQueryInfo, ResolutionRequest};
+use crate::types::{GraphQLOperationKind, ParsedQueryInfo, ResolutionRequest};
 use graphql_query::ast::{ASTContext, Definition, Document, Field, ParseNode, Selection};
 use std::collections::HashMap;
 use std::mem;
@@ -180,17 +180,8 @@ pub fn parse_graphql(query: &str) -> Result<(ParsedQueryInfo, ResolutionRequest)
     let mut path_dir = Vec::new();
     let mut path_types = Vec::new();
 
-    // Sort field paths to ensure deterministic encoding
-    // This isn't strictly necessary but makes testing easier
-    let mut sorted_paths: Vec<&FieldPath> = field_paths.iter().collect();
-    sorted_paths.sort_by_key(|p| {
-        p.iter()
-            .map(|&s| symbol_to_index.get(&s).copied().unwrap_or(0))
-            .collect::<Vec<_>>()
-    });
-
     // Encode each field path
-    for (path_id, path) in sorted_paths.iter().enumerate() {
+    for (_path_id, path) in field_paths.iter().enumerate() {
         // Record the current offset in the paths array
         path_dir.push(paths.len() as u32);
 
@@ -213,7 +204,7 @@ pub fn parse_graphql(query: &str) -> Result<(ParsedQueryInfo, ResolutionRequest)
 
     // Convert column_usage to the new cols format
     let mut cols = Vec::new();
-    for path in sorted_paths.iter() {
+    for path in field_paths.iter() {
         // Skip paths that aren't tables (no columns)
         if path.len() != 1 {
             continue;

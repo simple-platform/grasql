@@ -229,6 +229,9 @@ pub struct CachedQueryInfo {
 
     /// Raw pointer to the Document - valid as long as ast_context exists
     pub document_ptr: Option<*const Document<'static>>,
+
+    /// Cached ResolutionRequest to avoid regeneration when retrieving from cache
+    pub resolution_request: Option<ResolutionRequest>,
 }
 
 // Implementation of Send for CachedQueryInfo
@@ -277,6 +280,7 @@ impl fmt::Debug for CachedQueryInfo {
                     .map(|q| format!("{}...", &q[..20.min(q.len())])),
             )
             .field("document_ptr", &self.document_ptr.map(|_| "<Document>"))
+            .field("resolution_request", &self.resolution_request)
             .finish()
     }
 }
@@ -373,6 +377,7 @@ impl<'a> From<ParsedQueryInfo<'a>> for CachedQueryInfo {
             ast_context: info.ast_context,
             original_query: info.original_query,
             document_ptr: info.document_ptr,
+            resolution_request: None,
         }
     }
 }

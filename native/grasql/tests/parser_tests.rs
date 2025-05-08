@@ -666,8 +666,7 @@ fn test_multiple_operations() {
 
     // Now test with multiple operations in one document
     // Note: In GraphQL, when using multiple operations in one document, each operation must be named,
-    // and you must specify which operation to execute by name. Since our parsing code doesn't
-    // currently handle this, we're testing if it at least extracts all the operations correctly.
+    // and you must specify which operation to execute by name.
     let multi_op_query = r#"
     query GetUsers {
         users {
@@ -685,25 +684,76 @@ fn test_multiple_operations() {
     }
     "#;
 
-    // Try to parse the multi-operation document
-    let result = parse_graphql(multi_op_query);
+    // Parse the multi-operation document and assert success
+    let (info, request) =
+        parse_graphql(multi_op_query).expect("Failed to parse multi-operation document");
 
-    println!("!!!");
-    println!("result: {:?}", result);
-    println!("!!!");
+    // Verify operation info
+    assert_eq!(
+        info.operation_kind,
+        grasql::GraphQLOperationKind::InsertMutation,
+        "Primary operation kind should be InsertMutation"
+    );
 
-    // The parser should extract both operations
-    if let Ok((_, request)) = result {
-        assert!(
-            request.ops.len() >= 1,
-            "Should contain at least one operation"
-        );
+    // Since we have a named query, verify the operation name is preserved
+    assert_eq!(
+        info.operation_name,
+        Some("GetUsers".to_string()),
+        "Operation name should be GetUsers"
+    );
 
-        // Check that the correct root field names are in the strings table
-        assert!(
-            request.strings.contains(&"users".to_string())
-                || request.strings.contains(&"insert_posts".to_string()),
-            "Root field names should include 'users' or 'insert_posts'"
-        );
+    // Verify the resolution request contains both operations
+    assert_eq!(request.ops.len(), 2, "Should contain exactly 2 operations");
+
+    // Verify both "users" and "insert_posts" are in the strings table
+    assert!(
+        request.strings.contains(&"users".to_string()),
+        "Strings table should contain 'users'"
+    );
+    assert!(
+        request.strings.contains(&"insert_posts".to_string()),
+        "Strings table should contain 'insert_posts'"
+    );
+
+    // Find the operations in the ops vector and verify correct types
+    let mut found_query = false;
+    let mut found_insert = false;
+
+    for (field_idx, op_type) in &request.ops {
+        let field_name = &request.strings[*field_idx as usize];
+
+        if field_name == "users" {
+            assert_eq!(*op_type, 0, "User operation should have type 0 (query)");
+            found_query = true;
+        } else if field_name == "insert_posts" {
+            assert_eq!(
+                *op_type, 1,
+                "Insert_posts operation should have type 1 (insert mutation)"
+            );
+            found_insert = true;
+        }
     }
+
+    assert!(found_query, "Should contain a query operation for 'users'");
+    assert!(
+        found_insert,
+        "Should contain an insert mutation operation for 'insert_posts'"
+    );
+
+    // Verify field paths exist for both operations
+    assert!(!request.paths.is_empty(), "Paths should not be empty");
+    assert!(
+        !request.path_dir.is_empty(),
+        "Path directory should not be empty"
+    );
+    assert!(
+        !request.path_types.is_empty(),
+        "Path types should not be empty"
+    );
+
+    // Verify document pointer is preserved
+    assert!(
+        info.document_ptr.is_some(),
+        "Document pointer should be preserved for caching"
+    );
 }

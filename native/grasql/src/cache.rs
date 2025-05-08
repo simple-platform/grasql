@@ -1,5 +1,5 @@
 use crate::config::CONFIG;
-use crate::types::{CachedQueryInfo, ParsedQueryInfo};
+use crate::types::{CachedQueryInfo, ParsedQueryInfo, ResolutionRequest};
 use moka::sync::Cache;
 use once_cell::sync::Lazy;
 use std::time::Duration;
@@ -113,5 +113,31 @@ pub fn get_from_cache(query_id: &str) -> Option<CachedQueryInfo> {
 /// in production code.
 #[cfg(any(test, feature = "test-utils"))]
 pub fn insert_raw_for_test(query_id: &str, cached_info: CachedQueryInfo) {
+    QUERY_CACHE.insert(query_id.to_string(), cached_info);
+}
+
+/// Add a parsed query to the cache with its resolution request
+///
+/// This function converts the ParsedQueryInfo to a thread-safe CachedQueryInfo,
+/// includes the ResolutionRequest, and stores it in the global query cache
+/// using the query ID as the key.
+///
+/// # Memory Safety
+///
+/// The conversion to CachedQueryInfo properly preserves all necessary references
+/// to ensure memory safety and thread safety. The Document pointer is only valid
+/// while the AST context exists, which is guaranteed by the Arc wrapping the context.
+#[inline(always)]
+pub fn add_to_cache_with_request(
+    query_id: &str,
+    parsed_query_info: ParsedQueryInfo,
+    resolution_request: ResolutionRequest,
+) {
+    // Convert ParsedQueryInfo to CachedQueryInfo (thread-safe) version
+    let mut cached_info: CachedQueryInfo = parsed_query_info.into();
+
+    // Store the ResolutionRequest in the cached info
+    cached_info.resolution_request = Some(resolution_request);
+
     QUERY_CACHE.insert(query_id.to_string(), cached_info);
 }

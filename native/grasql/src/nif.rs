@@ -3,17 +3,12 @@
 /// This module provides the NIFs (Native Implemented Functions) that are exposed to Elixir.
 /// These functions are the bridge between Elixir and the Rust implementation of GraSQL.
 use crate::atoms;
-use crate::cache::{add_to_cache, generate_query_id, get_from_cache};
+use crate::cache::{add_to_cache_with_request, generate_query_id, get_from_cache};
 use crate::config::CONFIG;
-use crate::extraction::convert_paths_to_indices;
-use crate::interning::{get_all_strings, intern_str};
 use crate::parser::parse_graphql;
-use crate::sql::generate_sql;
-use crate::types::{CachedQueryInfo, FieldPath, GraphQLOperationKind, ResolutionRequest};
-use graphql_query::ast::{Definition, Document, Field, Selection};
+use crate::types::ResolutionRequest;
 
 use rustler::{Encoder, Env, Error, NifResult, Term};
-use std::collections::HashMap;
 
 /// Parse a GraphQL query string
 ///
@@ -39,12 +34,15 @@ pub fn do_parse_query(env: Env<'_>, query: String) -> rustler::NifResult<Term<'_
         // Cache hit - return the cached parsed query info
         let operation_kind = atoms::operation_kind_to_atom(cached_query_info.operation_kind);
 
-        // Create resolution request from cached query info
-        let resolution_request =
-            match create_resolution_request_from_cached(&cached_query_info, query_id.clone()) {
-                Ok(req) => req,
-                Err(e) => return Err(Error::Term(Box::new(e))),
-            };
+        // Use cached ResolutionRequest - it should always be available
+        let resolution_request = match &cached_query_info.resolution_request {
+            Some(req) => req.clone(),
+            None => {
+                return Err(Error::Term(Box::new(
+                    "ResolutionRequest not found in cache - this should never happen",
+                )))
+            }
+        };
 
         // Convert resolution request to Elixir term
         let resolution_term = match convert_resolution_request_to_elixir(env, &resolution_request) {
@@ -70,8 +68,12 @@ pub fn do_parse_query(env: Env<'_>, query: String) -> rustler::NifResult<Term<'_
         Err(e) => return Err(Error::Term(Box::new(e))),
     };
 
-    // Add to cache
-    add_to_cache(&query_id, parsed_query_info.clone());
+    // Add to cache with resolution request
+    add_to_cache_with_request(
+        &query_id,
+        parsed_query_info.clone(),
+        resolution_request.clone(),
+    );
 
     // Return the operation info
     let operation_kind = atoms::operation_kind_to_atom(parsed_query_info.operation_kind);
@@ -144,168 +146,6 @@ fn convert_resolution_request_to_elixir<'a>(
             ops_term,
         ],
     ))
-}
-
-/// Create a resolution request from a cached CachedQueryInfo
-#[inline(always)]
-fn create_resolution_request_from_cached(
-    cached_info: &CachedQueryInfo,
-    query_id: String,
-) -> Result<ResolutionRequest, String> {
-    // Extract document for parsing operations
-    let document = match cached_info.document() {
-        Some(doc) => doc,
-        None => return Err("Document not found in cached query".to_string()),
-    };
-
-    // Extract field paths from a cached CachedQueryInfo
-    let field_paths = match &cached_info.field_paths {
-        Some(paths) => paths,
-        None => return Err("Field paths not found in cached query".to_string()),
-    };
-
-    // Get all interned strings and create a mapping from SymbolId to index
-    let strings = get_all_strings();
-    let mut symbol_to_index = HashMap::with_capacity(strings.len());
-
-    for (i, name) in strings.iter().enumerate() {
-        let symbol_id = intern_str(name);
-        symbol_to_index.insert(symbol_id, i as u32);
-    }
-
-    // Create the encoded paths, path directory, and path types arrays
-    let mut paths = Vec::new();
-    let mut path_dir = Vec::new();
-    let mut path_types = Vec::new();
-
-    // Sort field paths to ensure deterministic encoding
-    let mut sorted_paths: Vec<&FieldPath> = field_paths.iter().collect();
-    sorted_paths.sort_by_key(|p| {
-        p.iter()
-            .map(|&s| symbol_to_index.get(&s).copied().unwrap_or(0))
-            .collect::<Vec<_>>()
-    });
-
-    // Encode each field path
-    for (path_id, path) in sorted_paths.iter().enumerate() {
-        // Record the current offset in the paths array
-        path_dir.push(paths.len() as u32);
-
-        // Add the path length
-        paths.push(path.len() as u32);
-
-        // Add each path segment as an index into the strings array
-        for &symbol_id in path.iter() {
-            let idx = match symbol_to_index.get(&symbol_id) {
-                Some(&idx) => idx,
-                None => return Err(format!("Symbol not found in mapping: {:?}", symbol_id)),
-            };
-            paths.push(idx);
-        }
-
-        // Determine if this is a table (0) or relationship (1)
-        // Heuristic: paths of length 1 are tables, longer paths are relationships
-        let path_type = if path.len() == 1 { 0 } else { 1 };
-        path_types.push(path_type);
-    }
-
-    // Convert column_usage to the new cols format
-    let mut cols = Vec::new();
-
-    // Extract column usage from cached query info
-    if let Some(column_usage) = &cached_info.column_usage {
-        for path in sorted_paths.iter() {
-            // Skip paths that aren't tables (no columns)
-            if path.len() != 1 {
-                continue;
-            }
-
-            // Get the table index (first element of path)
-            let table_idx = match symbol_to_index.get(&path[0]) {
-                Some(&idx) => idx,
-                None => return Err(format!("Table symbol not found in mapping: {:?}", path[0])),
-            };
-
-            // Check if there are columns for this table
-            if let Some(columns) = column_usage.get(path) {
-                // Convert column SymbolIds to indices
-                let column_indices: Vec<u32> = columns
-                    .iter()
-                    .filter_map(|&symbol_id| symbol_to_index.get(&symbol_id).copied())
-                    .collect();
-
-                // Only add if there are columns to resolve
-                if !column_indices.is_empty() {
-                    cols.push((table_idx, column_indices));
-                }
-            }
-        }
-    }
-
-    // Get the current configuration for operation prefixes
-    let config = match crate::config::CONFIG.lock() {
-        Ok(cfg) => match &*cfg {
-            Some(c) => c.clone(),
-            None => return Err("GraSQL not initialized".to_string()),
-        },
-        Err(_) => return Err("Failed to acquire config lock".to_string()),
-    };
-
-    // Extract operations from document
-    let mut ops = Vec::new();
-
-    // Process each operation definition
-    for definition in document.definitions.iter() {
-        if let Definition::Operation(op) = definition {
-            // For each operation, add the root fields
-            for selection in op.selection_set.selections.iter() {
-                if let Selection::Field(field) = selection {
-                    let field_symbol = intern_str(field.name);
-                    let field_idx = match symbol_to_index.get(&field_symbol) {
-                        Some(&idx) => idx,
-                        None => {
-                            return Err(format!(
-                                "Field symbol not found in mapping: {}",
-                                field.name
-                            ))
-                        }
-                    };
-
-                    // Determine operation type based on operation kind and field name
-                    let op_type = match op.operation {
-                        graphql_query::ast::OperationKind::Query => 0,
-                        graphql_query::ast::OperationKind::Mutation => {
-                            // Check field name against configured prefixes to determine specific mutation type
-                            if field.name.starts_with(&config.insert_prefix) {
-                                1 // Insert mutation
-                            } else if field.name.starts_with(&config.update_prefix) {
-                                2 // Update mutation
-                            } else if field.name.starts_with(&config.delete_prefix) {
-                                3 // Delete mutation
-                            } else {
-                                // Default to insert if no prefix match
-                                1
-                            }
-                        }
-                        graphql_query::ast::OperationKind::Subscription => 4,
-                    };
-
-                    ops.push((field_idx, op_type));
-                }
-            }
-        }
-    }
-
-    // Create resolution request
-    Ok(ResolutionRequest {
-        query_id,
-        strings,
-        paths,
-        path_dir,
-        path_types,
-        cols,
-        ops,
-    })
 }
 
 /// Generate SQL from a parsed GraphQL query

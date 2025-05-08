@@ -43,6 +43,7 @@ pub fn generate_sql_from_full(parsed_query_info: &ParsedQueryInfo) -> String {
         ast_context: parsed_query_info.ast_context.clone(),
         original_query: parsed_query_info.original_query.clone(),
         document_ptr: parsed_query_info.document_ptr,
+        resolution_request: None,
     };
 
     generate_sql(&cached_info)
