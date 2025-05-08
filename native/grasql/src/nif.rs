@@ -40,13 +40,14 @@ pub fn do_parse_query(env: Env<'_>, query: String) -> rustler::NifResult<Term<'_
             "ResolutionRequest not found in cache - cache invariant violated"
         );
 
-        let resolution_request = cached_query_info
-            .resolution_request
-            .as_ref()
-            .expect("ResolutionRequest missing from cache");
-
         // Convert resolution request to Elixir term
-        let resolution_term = match convert_resolution_request_to_elixir(env, &resolution_request) {
+        let resolution_term = match convert_resolution_request_to_elixir(
+            env,
+            cached_query_info
+                .resolution_request
+                .as_ref()
+                .expect("ResolutionRequest missing from cache"),
+        ) {
             Ok(term) => term,
             Err(e) => return Err(e),
         };
