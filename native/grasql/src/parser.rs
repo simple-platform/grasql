@@ -201,7 +201,7 @@ pub fn parse_graphql(query: &str) -> Result<(ParsedQueryInfo, ResolutionRequest)
 
         // Determine if this is a table (0) or relationship (1)
         // Heuristic: paths of length 1 are tables, longer paths are relationships
-        let path_type = if path.len() == 1 { 0 } else { 1 };
+        let path_type: u8 = if path.len() == 1 { 0 } else { 1 };
         path_types.push(path_type);
     }
 
