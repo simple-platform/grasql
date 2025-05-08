@@ -479,19 +479,14 @@ defmodule GraSQL.Schema do
   defp resolve_columns_for_table(
          path_id,
          table,
-         column_map,
+         _column_map,
          column_map_by_table,
          resolver,
          context
        ) do
-    # Find the table in the column map
-    table_idx =
-      get_path_element(
-        Enum.flat_map(column_map, fn {_, v} -> v end),
-        Enum.map(column_map, fn {t, _} -> t end),
-        path_id,
-        0
-      )
+    # The table index is the same as the path_id in the resolved_tables map
+    # This provides O(1) lookup instead of scanning vectors
+    table_idx = path_id
 
     # Get column names for this table from column_map
     column_names = Map.get(column_map_by_table, table_idx, [])
@@ -677,10 +672,14 @@ defmodule GraSQL.Schema do
     tables_with_index = build_table_index_mapping(relationships)
 
     # Process relationships
-    relationships
-    |> Map.values()
-    |> Enum.with_index()
-    |> Enum.map_reduce([], &process_relationship(&1, &2, tables_with_index, string_mapping))
+    {rels, joins} =
+      relationships
+      |> Map.values()
+      |> Enum.with_index()
+      |> Enum.map_reduce([], &process_relationship(&1, &2, tables_with_index, string_mapping))
+
+    # Reverse joins to maintain original order since we've been prepending
+    {rels, Enum.reverse(joins)}
   end
 
   # Build mapping from tables to indices
@@ -763,8 +762,8 @@ defmodule GraSQL.Schema do
     # Create the join table entry tuple
     join_entry = create_join_entry(schema_idx, name_idx, src_join_col_idxs, tgt_join_col_idxs)
 
-    # Add to joins and return index
-    {length(join_acc), join_acc ++ [join_entry]}
+    # Add to joins and return index - prepend for O(1) instead of append O(n)
+    {length(join_acc), [join_entry | join_acc]}
   end
 
   # Create a join table entry tuple
@@ -776,14 +775,17 @@ defmodule GraSQL.Schema do
   # Build path mapping
   @spec build_path_map(map(), map()) :: list(tuple())
   defp build_path_map(tables, relationships) do
-    # For each path ID, map to either a table or relationship entity
+    # For each path ID, map to either a table or relationship entity using with_index
+    # to ensure deterministic indexing regardless of path_id values
     table_maps =
       tables
-      |> Enum.map(fn {path_id, _} -> {path_id, {0, map_size(tables) - path_id - 1}} end)
+      |> Enum.with_index()
+      |> Enum.map(fn {{path_id, _table}, idx} -> {path_id, {0, idx}} end)
 
     relationship_maps =
       relationships
-      |> Enum.map(fn {path_id, _} -> {path_id, {1, map_size(relationships) - path_id - 1}} end)
+      |> Enum.with_index()
+      |> Enum.map(fn {{path_id, _rel}, idx} -> {path_id, {1, idx}} end)
 
     # Combine and sort by path_id for O(1) access by path_id
     (table_maps ++ relationship_maps)

@@ -35,14 +35,15 @@ pub fn do_parse_query(env: Env<'_>, query: String) -> rustler::NifResult<Term<'_
         let operation_kind = atoms::operation_kind_to_atom(cached_query_info.operation_kind);
 
         // Use cached ResolutionRequest - it should always be available
-        let resolution_request = match &cached_query_info.resolution_request {
-            Some(req) => req.clone(),
-            None => {
-                return Err(Error::Term(Box::new(
-                    "ResolutionRequest not found in cache - this should never happen",
-                )))
-            }
-        };
+        debug_assert!(
+            cached_query_info.resolution_request.is_some(),
+            "ResolutionRequest not found in cache - cache invariant violated"
+        );
+
+        let resolution_request = cached_query_info
+            .resolution_request
+            .as_ref()
+            .expect("ResolutionRequest missing from cache");
 
         // Convert resolution request to Elixir term
         let resolution_term = match convert_resolution_request_to_elixir(env, &resolution_request) {
@@ -182,37 +183,24 @@ pub fn do_generate_sql<'a>(
 
 /// Decode ResolutionResponse from Elixir term
 fn decode_resolution_response<'a>(
-    env: Env<'a>,
+    _env: Env<'a>,
     term: Term<'a>,
 ) -> NifResult<crate::types::ResolutionResponse> {
     // Extract fields from the map
     let query_id: String = term.map_get(atoms::query_id())?.decode()?;
-    let strings: Vec<String> = term
-        .map_get(&rustler::types::atom::Atom::from_str(env, "strings")?)?
-        .decode()?;
-    let tables: Vec<(u32, u32, u32)> = term
-        .map_get(&rustler::types::atom::Atom::from_str(env, "tables")?)?
-        .decode()?;
+    let strings: Vec<String> = term.map_get(atoms::strings())?.decode()?;
+    let tables: Vec<(u32, u32, u32)> = term.map_get(atoms::tables())?.decode()?;
 
     // Decode relationships with source and target column arrays
-    let rels: Vec<(u32, u32, u8, i32, Vec<u32>, Vec<u32>)> = term
-        .map_get(&rustler::types::atom::Atom::from_str(env, "rels")?)?
-        .decode()?;
+    let rels: Vec<(u32, u32, u8, i32, Vec<u32>, Vec<u32>)> =
+        term.map_get(atoms::rels())?.decode()?;
 
-    let joins: Vec<(u32, u32, Vec<u32>, Vec<u32>)> = term
-        .map_get(&rustler::types::atom::Atom::from_str(env, "joins")?)?
-        .decode()?;
-    let path_map: Vec<(u8, u32)> = term
-        .map_get(&rustler::types::atom::Atom::from_str(env, "path_map")?)?
-        .decode()?;
-    let cols: Vec<(u32, u32, u32, i32)> = term
-        .map_get(&rustler::types::atom::Atom::from_str(env, "cols")?)?
-        .decode()?;
+    let joins: Vec<(u32, u32, Vec<u32>, Vec<u32>)> = term.map_get(atoms::joins())?.decode()?;
+    let path_map: Vec<(u8, u32)> = term.map_get(atoms::path_map())?.decode()?;
+    let cols: Vec<(u32, u32, u32, i32)> = term.map_get(atoms::cols())?.decode()?;
 
     // Decode operations
-    let ops: Vec<(u32, u8)> = term
-        .map_get(&rustler::types::atom::Atom::from_str(env, "ops")?)?
-        .decode()?;
+    let ops: Vec<(u32, u8)> = term.map_get(atoms::ops())?.decode()?;
 
     Ok(crate::types::ResolutionResponse {
         query_id,

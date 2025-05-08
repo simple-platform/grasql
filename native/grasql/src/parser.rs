@@ -18,6 +18,14 @@ fn determine_operation_kind(document: &Document) -> Result<GraphQLOperationKind,
     let mut has_operation = false;
     let mut primary_kind = GraphQLOperationKind::Query; // Default to query
 
+    // Extract the config once before looping to reduce mutex contention
+    let config = crate::config::CONFIG
+        .lock()
+        .map_err(|_| "Failed to acquire config lock")?
+        .as_ref()
+        .ok_or("GraSQL not initialized")?
+        .clone();
+
     for definition in document.definitions.iter() {
         if let Definition::Operation(op) = definition {
             has_operation = true;
@@ -32,15 +40,6 @@ fn determine_operation_kind(document: &Document) -> Result<GraphQLOperationKind,
                 // Look at first selection name to determine mutation type
                 if let Some(selection) = op.selection_set.selections.first() {
                     if let Some(field) = selection.field() {
-                        // Get the current configuration to access prefixes
-                        let config = match crate::config::CONFIG.lock() {
-                            Ok(cfg) => match &*cfg {
-                                Some(c) => c.clone(),
-                                None => return Ok(GraphQLOperationKind::InsertMutation), // Default if not initialized
-                            },
-                            Err(_) => return Ok(GraphQLOperationKind::InsertMutation), // Default if lock fails
-                        };
-
                         // Check field name against configured prefixes
                         let field_name = field.name;
                         if field_name.starts_with(&config.insert_prefix) {
@@ -190,9 +189,10 @@ pub fn parse_graphql(query: &str) -> Result<(ParsedQueryInfo, ResolutionRequest)
 
         // Add each path segment as an index into the strings array
         for &symbol_id in path.iter() {
-            let idx = *symbol_to_index
+            let idx = symbol_to_index
                 .get(&symbol_id)
-                .expect("Symbol not found in mapping");
+                .copied()
+                .ok_or_else(|| format!("symbol {:?} missing from mapping", symbol_id))?;
             paths.push(idx);
         }
 
@@ -211,9 +211,10 @@ pub fn parse_graphql(query: &str) -> Result<(ParsedQueryInfo, ResolutionRequest)
         }
 
         // Get the table index (first element of path)
-        let table_idx = *symbol_to_index
+        let table_idx = symbol_to_index
             .get(&path[0])
-            .expect("Symbol not found in mapping");
+            .copied()
+            .ok_or_else(|| format!("symbol {:?} missing from mapping", path[0]))?;
 
         // Check if there are columns for this table
         if let Some(columns) = column_usage.get(path) {
@@ -221,11 +222,12 @@ pub fn parse_graphql(query: &str) -> Result<(ParsedQueryInfo, ResolutionRequest)
             let column_indices: Vec<u32> = columns
                 .iter()
                 .map(|&symbol_id| {
-                    *symbol_to_index
+                    symbol_to_index
                         .get(&symbol_id)
-                        .expect("Column symbol not found in mapping")
+                        .copied()
+                        .ok_or_else(|| format!("symbol {:?} missing from mapping", symbol_id))
                 })
-                .collect();
+                .collect::<Result<Vec<u32>, String>>()?;
 
             // Only add if there are columns to resolve
             if !column_indices.is_empty() {
@@ -236,23 +238,24 @@ pub fn parse_graphql(query: &str) -> Result<(ParsedQueryInfo, ResolutionRequest)
 
     // Extract operations
     let mut ops = Vec::new();
+
+    // Get the config once before processing operations to avoid repeated lock acquisitions
+    let config = crate::config::CONFIG
+        .lock()
+        .map_err(|_| "Failed to acquire config lock".to_string())?
+        .as_ref()
+        .ok_or("GraSQL not initialized".to_string())?
+        .clone();
+
     for definition in document.definitions.iter() {
         if let Definition::Operation(op) = definition {
             // For each operation, add the root fields
             for selection in op.selection_set.selections.iter() {
                 if let Selection::Field(field) = selection {
-                    let field_idx = *symbol_to_index
+                    let field_idx = symbol_to_index
                         .get(&intern_str(field.name))
-                        .expect("Field not found in mapping");
-
-                    // Get the current configuration for operation prefixes
-                    let config = match crate::config::CONFIG.lock() {
-                        Ok(cfg) => match &*cfg {
-                            Some(c) => c.clone(),
-                            None => return Err("GraSQL not initialized".to_string()),
-                        },
-                        Err(_) => return Err("Failed to acquire config lock".to_string()),
-                    };
+                        .copied()
+                        .ok_or_else(|| format!("field '{}' missing from mapping", field.name))?;
 
                     // Determine operation type based on operation kind and field name
                     let op_type = match op.operation {

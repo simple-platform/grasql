@@ -32,6 +32,15 @@ rustler::atoms! {
     path_dir,
     path_types,
     operations,
+
+    // Resolution response keys
+    strings,
+    tables,
+    rels,
+    joins,
+    path_map,
+    cols,
+    ops,
 }
 
 /// Convert GraphQLOperationKind to Erlang atom
