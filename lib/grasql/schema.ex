@@ -304,26 +304,45 @@ defmodule GraSQL.Schema do
     Enum.with_index(path_types)
     |> Enum.filter(fn {type, _} -> type == 1 end)
     |> Enum.map(fn {_, path_id} ->
-      # Get path information for this relationship
-      path_offset = Enum.at(path_dir, path_id)
-      path_length = Enum.at(paths, path_offset)
-
-      if path_length >= 2 do
-        # Find the parent path ID by checking all table paths
-        parent_path_id = find_parent_path_id(path_id, paths, path_dir, path_types)
-
-        # Get the relationship field name (last element of the path)
-        field_idx = get_path_element(paths, path_dir, path_id, path_length - 1)
-        field_name = Enum.at(strings, field_idx)
-
-        # Return the path ID, parent path ID, and field name for resolution
-        {path_id, {parent_path_id, field_name}}
-      else
-        # Shouldn't happen for properly constructed relationships, but handle it gracefully
-        {path_id, {-1, ""}}
-      end
+      process_relationship_path(path_id, strings, paths, path_dir, path_types)
     end)
-    |> Enum.filter(fn {_, {parent_id, _}} -> parent_id != -1 end)
+    |> Enum.filter(fn
+      {:skip, _} -> false
+      {_, {parent_id, _}} -> parent_id != -1
+    end)
+  end
+
+  # Process a single relationship path
+  defp process_relationship_path(path_id, strings, paths, path_dir, path_types) do
+    # Get path information for this relationship
+    path_offset = Enum.at(path_dir, path_id, -1)
+
+    # Skip invalid paths immediately
+    if path_offset == -1 do
+      {:skip, {-1, ""}}
+    else
+      extract_relationship_info(path_id, path_offset, strings, paths, path_dir, path_types)
+    end
+  end
+
+  # Extract relationship information from a valid path
+  defp extract_relationship_info(path_id, path_offset, strings, paths, path_dir, path_types) do
+    path_length = Enum.at(paths, path_offset, 0)
+
+    if path_length >= 2 do
+      # Find the parent path ID by checking all table paths
+      parent_path_id = find_parent_path_id(path_id, paths, path_dir, path_types)
+
+      # Get the relationship field name (last element of the path)
+      field_idx = get_path_element(paths, path_dir, path_id, path_length - 1)
+      field_name = Enum.at(strings, field_idx)
+
+      # Return the path ID, parent path ID, and field name for resolution
+      {path_id, {parent_path_id, field_name}}
+    else
+      # Shouldn't happen for properly constructed relationships, but handle it gracefully
+      {path_id, {-1, ""}}
+    end
   end
 
   # Find the parent path ID for a relationship path
@@ -627,7 +646,7 @@ defmodule GraSQL.Schema do
       |> Enum.flat_map(fn cols ->
         Enum.flat_map(cols, fn col ->
           [col.name, col.sql_type] ++
-            if col.default_value, do: [to_string(col.default_value)], else: []
+            if is_nil(col.default_value), do: [], else: [to_string(col.default_value)]
         end)
       end)
 
