@@ -53,8 +53,7 @@ defmodule GraSQL do
       case GraSQL.Native.generate_sql(resolution_response) do
         {:ok, operations} ->
           # Process operations with variables
-          processed_operations = process_operations(operations, variables)
-          {:ok, processed_operations}
+          process_operations(operations, variables)
 
         {:error, reason} ->
           {:error, reason}
@@ -64,32 +63,48 @@ defmodule GraSQL do
 
   # Process SQL operations to include variables
   defp process_operations(operations, variables) do
-    Enum.map(operations, fn {name, sql, params} ->
-      processed_params = process_parameters(params, variables)
-      {name, sql, processed_params}
+    Enum.reduce_while(operations, {:ok, []}, fn {name, sql, params}, {:ok, acc} ->
+      case process_parameters(params, variables) do
+        {:error, _} = err -> {:halt, err}
+        processed_params -> {:cont, {:ok, [{name, sql, processed_params} | acc]}}
+      end
     end)
+    |> case do
+      {:ok, ops} -> {:ok, Enum.reverse(ops)}
+      err -> err
+    end
   end
 
   # Process parameters to include variable values
   defp process_parameters(params, variables) do
-    Enum.map(params, fn
-      # Inline value
-      {0, value} ->
-        value
+    Enum.reduce_while(params, [], &process_parameter(&1, &2, variables))
+    |> case do
+      {:error, _} = err -> err
+      acc -> Enum.reverse(acc)
+    end
+  end
 
-      # Variable reference
-      {1, var_name} ->
-        case Map.fetch(variables, var_name) do
-          {:ok, value} ->
-            value
-          :error ->
-            variables
-            |> Map.fetch(String.to_atom(to_string(var_name)))
-            |> case do
-              {:ok, value} -> value
-              :error       -> {:error, {:missing_variable, var_name}}
-            end
+  # Process a single parameter
+  defp process_parameter({0, value}, acc, _variables), do: {:cont, [value | acc]}
+
+  defp process_parameter({1, var_name}, acc, variables) do
+    case lookup_variable(var_name, variables) do
+      {:ok, value} -> {:cont, [value | acc]}
+      {:error, _} = err -> {:halt, err}
+    end
+  end
+
+  # Helper function to lookup variable in variables map
+  defp lookup_variable(var_name, variables) do
+    case Map.fetch(variables, var_name) do
+      {:ok, value} ->
+        {:ok, value}
+
+      :error ->
+        case Map.fetch(variables, String.to_atom(to_string(var_name))) do
+          {:ok, value} -> {:ok, value}
+          :error -> {:error, {:missing_variable, var_name}}
         end
-    end)
+    end
   end
 end
